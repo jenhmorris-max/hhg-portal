@@ -37,6 +37,12 @@ Nobody can see another company's data — the database and the file bucket both 
    - Redirect URLs: add the same URL(s).
 5. **Project Settings → API**: copy **Project URL** and **anon public** key.
 
+### 1b. Email delivery (required before inviting clients)
+Supabase's built-in mailer only delivers to **your own team's addresses** and is capped at a few emails per hour — fine for testing, useless for clients. Set up custom SMTP once:
+1. Create a free account at resend.com (3,000 emails/month free) → add and verify the domain `hopeharvestgroup.com` (it gives you DNS records to add in Cloudflare) → create an API key.
+2. Supabase → **Project Settings → Authentication → SMTP Settings** → Enable custom SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = the API key, sender `portal@hopeharvestgroup.com`, sender name `HHG Client Portal`.
+3. Optional: **Authentication → Email Templates** → edit *Magic Link* to read as an invitation ("You've been invited to the HHG Client Portal…"), and *Confirm signup* / *Reset password* to match.
+
 ### 2. Configure the front end
 Edit `public/config.js` and paste the two values. (The anon key is meant to be public; the service_role key must never go here.)
 
@@ -68,8 +74,8 @@ then open http://localhost:8080 (add that URL to Supabase redirect URLs while te
 
 **Onboard a client**
 1. Clients → **New client** → name, short ID, logo.
-2. Enter workspace → **People → Invite** the owner's email as **Admin**.
-3. Send them the portal link; they click *Create account* with that email and they're in.
+2. Enter workspace → **People → Invite** the owner's email as **Admin**. They receive a sign-in link; on first sign-in they set their name and password.
+3. Use **Resend** on a pending invite if the email went astray.
 4. Upload their handbook, job descriptions and benefits handouts. Tick *Visible to client staff* on anything employees should see; the client admin can then invite staff as **Staff**.
 
 **Run a search**: Hiring → New job order → attach the interview-process doc → add candidates with resumes. You and the client admin both move candidates and add notes; the activity log shows who did what.

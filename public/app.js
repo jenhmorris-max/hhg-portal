@@ -746,6 +746,9 @@
         if (!(await confirmBox("Remove access?", `${mm.profile?.email} will no longer be able to sign in to ${S.org.name}.`, "Remove"))) return;
         try { const { error } = await sb.from("memberships").delete().eq("id", mm.id); if (error) throw error; await log("membership", mm.user_id, "removed", { email: mm.profile?.email }); render(); } catch (e) { fail(e); }
       });
+      $("#main").querySelectorAll("[data-resend]").forEach((b) => b.onclick = () => busy(b, async () => {
+        const { error } = await sb.auth.signInWithOtp({ email: b.dataset.resend, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; toast("Sign-in link re-sent");
+      }));
       $("#main").querySelectorAll("[data-rminv]").forEach((b) => b.onclick = async () => {
         try { const { error } = await sb.from("invites").delete().eq("id", b.dataset.rminv); if (error) throw error; render(); } catch (e) { fail(e); }
       });
@@ -759,8 +762,8 @@
           <td style="text-align:right">${m.user_id === me && !isSuper() ? "" : `<button class="btn sm danger" data-rm="${m.id}">Remove</button>`}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No members yet.</td></tr>`}
       </tbody></table></div>
       <h3 style="margin:18px 0 8px">Pending invitations</h3>
-      <div class="card">${(invs || []).length ? `<table><tbody>${invs.map((i) => `<tr><td>${esc(i.email)}</td><td><span class="pill">${i.role === "admin" ? "Admin" : "Staff"}</span></td><td class="muted small">Invited ${fmtDate(i.created_at)}</td><td style="text-align:right"><button class="btn sm quiet" data-rminv="${i.id}">Cancel</button></td></tr>`).join("")}</tbody></table>`
-        : `<span class="muted small">No pending invitations. When you invite someone, they get access the moment they create an account with that email.</span>`}</div>
+      <div class="card">${(invs || []).length ? `<table><tbody>${invs.map((i) => `<tr><td>${esc(i.email)}</td><td><span class="pill">${i.role === "admin" ? "Admin" : "Staff"}</span></td><td class="muted small">Invited ${fmtDate(i.created_at)}</td><td style="text-align:right"><button class="btn sm quiet" data-resend="${esc(i.email)}">Resend</button> <button class="btn sm quiet" data-rminv="${i.id}">Cancel</button></td></tr>`).join("")}</tbody></table>`
+        : `<span class="muted small">No pending invitations. Invited people receive a sign-in link by email and get access the moment they use it.</span>`}</div>
       <div class="notice" style="margin-top:14px"><b>Access levels.</b> <b>Admin</b> sees everything for this company: all documents, hiring boards, resumes, and can invite others. <b>Staff</b> can only open documents marked “visible to client staff” — handbooks and benefits handouts, for example.</div>`;
   }
   function inviteModal() {
@@ -768,14 +771,19 @@
       <div class="modal-head"><h3>Invite to ${esc(S.org.name)}</h3><button class="x" data-close>×</button></div>
       <form id="f"><label>Email address</label><input type="email" name="email" required />
         <label>Access level</label><select name="role"><option value="admin">Admin — full access (owner / manager)</option><option value="member">Staff — shared documents only</option></select>
-        <p class="small muted" style="margin-top:12px">Send them to <b>${esc(location.origin + location.pathname)}</b> to create an account with this email. If they already have an account, access is granted immediately.</p>
+        <p class="small muted" style="margin-top:12px">They'll get an email with a secure sign-in link. On first sign-in they set their name and password. If they already have an account, access is granted immediately.</p>
         <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Invite</button></div></form>`);
     const f = m.el.querySelector("#f");
     f.onsubmit = (e) => { e.preventDefault(); busy(m.el.querySelector("#save"), async () => {
       const d = Object.fromEntries(new FormData(f));
-      const { error } = await sb.from("invites").upsert({ org_id: S.org.id, email: d.email.trim().toLowerCase(), role: d.role, invited_by: S.session.user.id }, { onConflict: "org_id,email" }); if (error) throw error;
-      await log("membership", null, "invited", { email: d.email.trim().toLowerCase(), role: d.role });
-      m.close(); toast("Invitation created"); render();
+      const email = d.email.trim().toLowerCase();
+      const { data: inv, error } = await sb.from("invites").upsert({ org_id: S.org.id, email, role: d.role, invited_by: S.session.user.id }, { onConflict: "org_id,email" }).select().single(); if (error) throw error;
+      await log("membership", null, "invited", { email, role: d.role });
+      if (inv.accepted_at) { m.close(); toast("They already had an account — access granted"); render(); return; }
+      // send a sign-in link; the account is created when they click it and access is granted automatically
+      const { error: mailErr } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname, data: { invited_to: S.org.name } } });
+      m.close(); render();
+      if (mailErr) toast("Invite saved, but the email could not be sent: " + mailErr.message, true); else toast("Invitation email sent to " + email);
     }); };
   }
 
@@ -915,6 +923,23 @@
     try { await loadContext(); } catch (e) { fail(e); return renderAuth("signin", `<div class="error">Could not load your profile. Try signing in again.</div>`); }
     if (!location.hash) location.hash = S.org ? "#docs" : (isSuper() ? "#admin" : "#docs");
     render();
+    if (!S.profile.full_name) setupModal();
+  }
+  function setupModal() {
+    const m = modal(`<div class="modal-head"><h3>Welcome — finish setting up</h3></div>
+      <p class="small muted">You signed in with an emailed link. Add your name and choose a password so you can sign in directly next time.</p>
+      <form id="f" novalidate><label>Full name</label><input type="text" name="full_name" autocomplete="name" />
+        <label>Password <span class="muted">(10+ characters)</span></label><input type="password" name="password" autocomplete="new-password" />
+        <div class="modal-foot"><button class="btn" id="save">Save and continue</button></div></form>`);
+    m.el.closest(".modal-bg").onclick = null;
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const name = f.full_name.value.trim(), pw = f.password.value;
+      if (!name) throw new Error("Please enter your name."); if (pw.length < 10) throw new Error("Password must be at least 10 characters.");
+      const { error: e1 } = await sb.auth.updateUser({ password: pw }); if (e1) throw e1;
+      const { error: e2 } = await sb.from("profiles").update({ full_name: name }).eq("id", S.session.user.id); if (e2) throw e2;
+      S.profile.full_name = name; m.close(); toast("You're all set"); render();
+    }); };
   }
   sb.auth.onAuthStateChange((event, session) => {
     if (event === "PASSWORD_RECOVERY") { S.recovery = true; S.session = session; renderAuth("recovery"); return; }
