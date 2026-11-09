@@ -185,6 +185,7 @@
 
   // ------------------------------------------------------------ shell
   function navItems() {
+    if (!S.org) return isSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }] : [];
     const items = [{ h: "#docs", t: "Documents", i: "▤" }];
     if (isAdmin()) items.push({ h: "#hiring", t: "Hiring", i: "◫" }, { h: "#people", t: "People", i: "◉" });
     if (isSuper()) items.push({ h: "#admin", t: "Clients", i: "✦" });
@@ -225,13 +226,14 @@
   async function render() {
     if (S.recovery) return renderAuth("recovery");
     if (!S.session) return renderAuth();
-    if (!S.org) {
-      if (isSuper()) { if ((location.hash || "") !== "#admin") location.hash = "#admin"; return renderShell(await viewAdmin()); }
+    if (!S.org && !isSuper()) {
       return renderShell(`<div class="empty"><h3>No access yet</h3><p>Your account isn't attached to a client workspace.<br>Ask your HR consultant to invite <b>${esc(S.profile.email)}</b>.</p>
         <a class="btn ghost" href="mailto:${esc(CFG.SUPPORT_EMAIL)}">Email ${esc(CFG.SUPPORT_EMAIL)}</a></div>`);
     }
-    const [route, arg] = (location.hash || "#docs").slice(1).split("/");
+    let [route, arg] = (location.hash || "#docs").slice(1).split("/");
+    if (!S.org) route = "admin";   // super admin with no clients yet: only the Clients screen makes sense
     let html = "";
+    const token = (render.seq = (render.seq || 0) + 1);
     try {
       if (route === "hiring" && isAdmin()) html = arg ? await viewJobOrder(arg) : await viewHiring();
       else if (route === "people" && isAdmin()) html = await viewPeople();
@@ -239,6 +241,7 @@
       else if (route === "account") html = viewAccount();
       else html = await viewDocs();
     } catch (e) { fail(e); html = `<div class="empty">Something went wrong loading this page.</div>`; }
+    if (token !== render.seq) return;   // a newer render superseded this one
     renderShell(html);
     const hook = window.__afterRender; window.__afterRender = null; if (hook) hook();
   }
@@ -561,19 +564,27 @@
   function orgModal(o = null) {
     const m = modal(`
       <div class="modal-head"><h3>${o ? "Client settings" : "New client"}</h3><button class="x" data-close>×</button></div>
-      <form id="f"><label>Company name</label><input type="text" name="name" required value="${esc(o?.name || "")}" />
-        <label>Short ID <span class="muted">(letters, numbers, dashes)</span></label><input type="text" name="slug" required pattern="[a-z0-9-]+" value="${esc(o?.slug || "")}" placeholder="white-house-custom" />
+      <form id="f" novalidate><label>Company name</label><input type="text" name="company_name" required value="${esc(o?.name || "")}" placeholder="e.g. White House Custom Apparel & Graphics" />
         <div class="two"><div><label>Accent color</label><input type="text" name="accent" value="${esc(o?.accent || "#1f4d3a")}" placeholder="#1f4d3a" /></div>
         <div><label>Logo ${o?.logo_path ? "<span class='muted'>(replace)</span>" : ""}</label><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml" /></div></div>
         <div class="modal-foot">${o ? `<button type="button" class="btn danger" id="del">Delete client</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${o ? "Save" : "Create"}</button></div></form>`);
     const f = m.el.querySelector("#f");
-    f.oninput = () => { if (!o && f.name === document.activeElement) f.slug.value = f.name.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); };
     f.onsubmit = (e) => { e.preventDefault(); busy(m.el.querySelector("#save"), async () => {
       const d = Object.fromEntries(new FormData(f)); const logo = f.logo.files[0];
-      const rec = { name: d.name.trim(), slug: d.slug.trim(), accent: /^#[0-9a-fA-F]{6}$/.test(d.accent.trim()) ? d.accent.trim() : "#1f4d3a" };
+      const name = (d.company_name || "").trim();
+      if (!name) throw new Error("Please enter the company name.");
+      const rec = { name, accent: /^#[0-9a-fA-F]{6}$/.test((d.accent || "").trim()) ? d.accent.trim() : "#1f4d3a" };
       let orgId = o?.id;
       if (o) { const { error } = await sb.from("organizations").update(rec).eq("id", o.id); if (error) throw error; }
-      else { const { data, error } = await sb.from("organizations").insert(rec).select().single(); if (error) throw error; orgId = data.id; }
+      else {
+        const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "client";
+        let slug = base, attempt = 0, data, error;
+        do {
+          ({ data, error } = await sb.from("organizations").insert({ ...rec, slug }).select().single());
+          if (error && error.code === "23505") { attempt++; slug = `${base}-${Math.random().toString(36).slice(2, 6)}`; } else break;
+        } while (attempt < 3);
+        if (error) throw error; orgId = data.id;
+      }
       if (logo) {
         const path = `${orgId}/branding/logo-${Date.now()}.${logo.name.split(".").pop()}`;
         const { error } = await sb.storage.from(BUCKET).upload(path, logo, { contentType: logo.type }); if (error) throw error;
