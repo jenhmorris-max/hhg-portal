@@ -1,0 +1,9 @@
+{
+  // Cloudflare Workers config — serves the static site in ./public
+  "name": "hhg-portal",
+  "compatibility_date": "2026-01-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}
