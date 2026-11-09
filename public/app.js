@@ -190,9 +190,10 @@
 
   // ------------------------------------------------------------ shell
   function navItems() {
-    if (!S.org) return isRealSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }] : [];
+    if (!S.org) return isRealSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }, { h: "#requests", t: "Requests", i: "✉" }] : [];
     const items = [{ h: "#docs", t: "Documents", i: "▤" }];
     if (isAdmin()) items.push({ h: "#employees", t: "Employees", i: "☰" }, { h: "#hiring", t: "Hiring", i: "◫" }, { h: "#people", t: "People", i: "◉" });
+    items.push({ h: "#requests", t: "Requests", i: "✉" });
     return items;
   }
   function roleLabel(r) { return r === "super" ? "JHM admin" : r === "admin" ? "Client admin" : "Staff"; }
@@ -200,7 +201,7 @@
     const route = (location.hash || "#docs").split("/")[0];
     const nav = navItems();
     const inWorkspace = !!S.org;
-    const accent = (inWorkspace && S.org.accent) || "#1f4d3a";
+    const accent = (inWorkspace && S.org.accent) || "#23305a";
     document.documentElement.style.setProperty("--accent", accent);
     const logo = inWorkspace && S.logoUrl ? `<img class="logo" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(inWorkspace ? S.org.name : "HH"))}</div>`;
     const orgSwitch = S.orgs.length > 1 && inWorkspace ? `<div class="org-switch"><select id="orgsel">${S.orgs.map((o) => `<option value="${o.id}" ${o.id === S.org?.id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></div>` : "";
@@ -220,7 +221,7 @@
         </header>
         <div class="layout">
           <nav class="sidenav">${sideTop}${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}">${n.i} ${n.t}</a>`).join("")}
-            <div class="sect">Help</div><a href="mailto:${esc(CFG.SUPPORT_EMAIL)}">✉ Ask JHM</a></nav>
+            ${inWorkspace ? `<div class="sect">Help</div><a href="#" id="askjhm">✉ Ask JHM</a>` : ""}</nav>
           <main class="main" id="main">${inner}</main>
         </div>
         <nav class="tabbar">${(isRealSuper() && inWorkspace ? [{ h: "#admin", t: "Clients", i: "✦" }] : []).concat(nav).map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}"><span>${n.i}</span>${n.t}</a>`).join("")}</nav>
@@ -231,6 +232,7 @@
     $("#signout").onclick = () => sb.auth.signOut();
     menu.querySelector("[data-go]").onclick = () => { location.hash = "#account"; };
     const sel = $("#orgsel"); if (sel) sel.onchange = () => switchOrg(sel.value);
+    const ask = $("#askjhm"); if (ask) ask.onclick = (e) => { e.preventDefault(); requestModal(); };
     const va = $("#viewas"); if (va) va.onchange = () => { S.viewAs = va.value || null; if (!isAdmin() && !["docs", "account"].includes(route.slice(1))) location.hash = "#docs"; else render(); };
   }
 
@@ -240,11 +242,11 @@
     if (!S.session) return renderAuth();
     if (!S.org && !isSuper()) {
       return renderShell(`<div class="empty"><h3>No access yet</h3><p>Your account isn't attached to a client workspace.<br>Ask your HR consultant to invite <b>${esc(S.profile.email)}</b>.</p>
-        <a class="btn ghost" href="mailto:${esc(CFG.SUPPORT_EMAIL)}">Email ${esc(CFG.SUPPORT_EMAIL)}</a></div>`);
+        </div>`);
     }
     let [route, arg] = (location.hash || "#docs").slice(1).split("/");
-    if (route === "admin" && isRealSuper()) { S.org = null; S.viewAs = null; try { localStorage.removeItem("hhg.org"); } catch {} }
-    if (!S.org) route = "admin";   // super admin outside any workspace: the Clients screen
+    if ((route === "admin" || (route === "requests" && !S.org)) && isRealSuper()) { S.org = null; S.viewAs = null; try { localStorage.removeItem("hhg.org"); } catch {} }
+    if (!S.org && route !== "requests") route = "admin";   // super admin outside any workspace
     let html = "";
     const token = (render.seq = (render.seq || 0) + 1);
     try {
@@ -252,6 +254,7 @@
       else if (route === "employees" && isAdmin()) html = arg ? await viewEmployee(arg) : await viewEmployees();
       else if (route === "people" && isAdmin()) html = await viewPeople();
       else if (route === "admin" && isRealSuper()) html = await viewAdmin();
+      else if (route === "requests") html = await viewRequests();
       else if (route === "account") html = viewAccount();
       else html = await viewDocs();
     } catch (e) { fail(e); html = `<div class="empty">Something went wrong loading this page.</div>`; }
@@ -787,7 +790,7 @@
     };
     return `
       <div class="page-head"><div><h1>Clients</h1><p>Every company workspace in the portal. Enter one to manage its documents, hiring and people.</p></div><button class="btn" id="neworg">＋ New client</button></div>
-      <div class="grid">${orgs.map((o) => `<div class="card"><div style="display:flex;gap:12px;align-items:center"><div class="icon" style="background:${esc(o.accent || "#1f4d3a")};color:#fff">${esc(initials(o.name))}</div><div class="grow"><h3>${esc(o.name)}</h3><div class="small muted">${o.memberships?.[0]?.count ?? 0} users · ${o.documents?.[0]?.count ?? 0} docs · ${o.job_orders?.[0]?.count ?? 0} job orders</div></div></div>
+      <div class="grid">${orgs.map((o) => `<div class="card"><div style="display:flex;gap:12px;align-items:center"><div class="icon" style="background:${esc(o.accent || "#23305a")};color:#fff">${esc(initials(o.name))}</div><div class="grow"><h3>${esc(o.name)}</h3><div class="small muted">${o.memberships?.[0]?.count ?? 0} users · ${o.documents?.[0]?.count ?? 0} docs · ${o.job_orders?.[0]?.count ?? 0} job orders</div></div></div>
         <div style="display:flex;gap:8px;margin-top:14px"><button class="btn sm" data-enter="${o.id}">Enter workspace</button><button class="btn sm quiet" data-edit="${o.id}">Settings</button></div></div>`).join("")
         || `<div class="empty" style="grid-column:1/-1"><h3>No clients yet</h3><p>Create your first client workspace, then invite their owner as an admin.</p></div>`}</div>`;
   }
@@ -795,7 +798,7 @@
     const m = modal(`
       <div class="modal-head"><h3>${o ? "Client settings" : "New client"}</h3><button class="x" data-close>×</button></div>
       <form id="f" novalidate><label>Company name</label><input type="text" name="company_name" required value="${esc(o?.name || "")}" placeholder="e.g. White House Custom Apparel & Graphics" />
-        <div class="two"><div><label>Accent color</label><input type="text" name="accent" value="${esc(o?.accent || "#1f4d3a")}" placeholder="#1f4d3a" /></div>
+        <div class="two"><div><label>Accent color</label><input type="text" name="accent" value="${esc(o?.accent || "#23305a")}" placeholder="#23305a" /></div>
         <div><label>Logo ${o?.logo_path ? "<span class='muted'>(replace)</span>" : ""}</label><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml" /></div></div>
         <div class="modal-foot">${o ? `<button type="button" class="btn danger" id="del">Delete client</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${o ? "Save" : "Create"}</button></div></form>`);
     const f = m.el.querySelector("#f");
@@ -803,7 +806,7 @@
       const d = Object.fromEntries(new FormData(f)); const logo = f.logo.files[0];
       const name = (d.company_name || "").trim();
       if (!name) throw new Error("Please enter the company name.");
-      const rec = { name, accent: /^#[0-9a-fA-F]{6}$/.test((d.accent || "").trim()) ? d.accent.trim() : "#1f4d3a" };
+      const rec = { name, accent: /^#[0-9a-fA-F]{6}$/.test((d.accent || "").trim()) ? d.accent.trim() : "#23305a" };
       let orgId = o?.id;
       if (o) { const { error } = await sb.from("organizations").update(rec).eq("id", o.id); if (error) throw error; }
       else {
@@ -828,6 +831,65 @@
       if (!(await confirmBox("Delete this client?", `Everything for ${o.name} — documents, hiring, users — is permanently deleted. Files in storage must be cleared separately.`))) return;
       try { const { error } = await sb.from("organizations").delete().eq("id", o.id); if (error) throw error; m.close(); try { localStorage.removeItem("hhg.org"); } catch {} await loadContext(); location.hash = "#admin"; render(); } catch (e) { fail(e); }
     };
+  }
+
+  // ------------------------------------------------------------ REQUESTS (Ask JHM)
+  const REQ_CATS = ["General question", "Document request", "New hire / onboarding", "Employee issue", "Policy / handbook", "Hiring help", "Compliance", "Portal access", "Other"];
+  const REQ_STATUS = { new: "New", in_progress: "In progress", resolved: "Resolved" };
+  let reqFilter = "open";
+  function requestModal() {
+    const m = modal(`<div class="modal-head"><h3>Ask JHM</h3><button class="x" data-close>×</button></div>
+      <p class="small muted">Send a question or request to your HR consultant. You'll see the reply here in the portal under <b>Requests</b>.</p>
+      <form id="f" novalidate>
+        <div class="two"><div><label>Topic</label><select name="category">${REQ_CATS.map((c) => `<option>${c}</option>`).join("")}</select></div>
+        <div><label>Urgency</label><select name="urgency"><option>Low</option><option selected>Normal</option><option>Urgent</option></select></div></div>
+        <label>Subject *</label><input type="text" name="subject" placeholder="One line summary" />
+        <label>Details *</label><textarea name="body" style="min-height:130px" placeholder="What do you need? Include names, dates and anything that helps."></textarea>
+        <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Send request</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f));
+      if (!d.subject.trim() || !d.body.trim()) throw new Error("Subject and details are required.");
+      const { error } = await sb.from("requests").insert({ org_id: S.org.id, user_id: S.session.user.id, category: d.category, urgency: d.urgency, subject: d.subject.trim(), body: d.body.trim() }); if (error) throw error;
+      await log("request", null, "created", { subject: d.subject.trim() }); m.close(); toast("Request sent to JHM"); if ((location.hash || "").startsWith("#requests")) render();
+    }); };
+  }
+  async function viewRequests() {
+    let q = sb.from("requests").select("*, profile:user_id(full_name,email), organizations(name)").order("created_at", { ascending: false });
+    if (S.org) q = q.eq("org_id", S.org.id);
+    const { data: reqs, error } = await q; if (error) throw error;
+    const list = reqs.filter((r) => reqFilter === "all" || (reqFilter === "open" ? r.status !== "resolved" : r.status === reqFilter));
+    const mineOnly = S.org && !isAdmin();
+    window.__afterRender = () => {
+      const nb = $("#newreq"); if (nb) nb.onclick = () => requestModal();
+      $("#main").querySelectorAll(".chip").forEach((c) => c.onclick = () => { reqFilter = c.dataset.c; render(); });
+      $("#main").querySelectorAll("[data-req]").forEach((el) => el.onclick = () => requestDetail(reqs.find((r) => r.id === el.dataset.req)));
+    };
+    return `
+      <div class="page-head"><div><h1>${S.org ? "Requests" : "Client requests"}</h1><p>${S.org ? (mineOnly ? "Questions you've sent to JHM Consulting and their replies." : "Everything " + esc(S.org.name) + " has asked JHM.") : "Inbox across all clients."}</p></div>
+        ${S.org ? `<button class="btn" id="newreq">＋ Ask JHM</button>` : ""}</div>
+      <div class="filters">${[["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"], ["all", "All"]].map(([k, v]) => `<button class="chip ${reqFilter === k ? "active" : ""}" data-c="${k}">${v}</button>`).join("")}</div>
+      <div class="list">${list.length ? list.map((r) => `<div class="row" data-req="${r.id}" style="cursor:pointer"><div class="icon ${r.urgency === "Urgent" ? "urgent" : ""}">${r.urgency === "Urgent" ? "!" : "✉"}</div>
+        <div class="grow"><div class="title">${esc(r.subject)}</div><div class="meta">${!S.org ? `<span><b>${esc(r.organizations?.name || "")}</b></span>` : ""}<span>${esc(r.profile?.full_name || r.profile?.email || "")}</span><span>${esc(r.category)}</span><span>${fmtDT(r.created_at)}</span>${r.response ? `<span>· Replied</span>` : ""}</div></div>
+        <div class="actions"><span class="pill ${r.status === "new" ? "warn" : r.status === "resolved" ? "" : "on"}">${REQ_STATUS[r.status]}</span></div></div>`).join("")
+        : `<div class="empty"><h3>No requests ${reqFilter === "all" ? "yet" : "here"}</h3><p>${S.org ? "Use Ask JHM to send a question — replies show up here." : "Client questions land here when they use Ask JHM."}</p></div>`}</div>`;
+  }
+  function requestDetail(r) {
+    const m = modal(`<div class="modal-head"><h3>${esc(r.subject)}</h3><button class="x" data-close>×</button></div>
+      <div class="meta small muted" style="display:flex;gap:10px;flex-wrap:wrap">${[r.organizations?.name, r.profile?.full_name || r.profile?.email, r.category, r.urgency + " urgency", fmtDT(r.created_at)].filter(Boolean).map(esc).join(" · ")}</div>
+      <div class="card" style="margin:14px 0;white-space:pre-wrap">${esc(r.body)}</div>
+      ${r.response ? `<h3 style="font-size:15px">Reply from JHM</h3><div class="card reply" style="white-space:pre-wrap;margin-top:6px">${esc(r.response)}<div class="small muted" style="margin-top:8px">${fmtDT(r.responded_at)}</div></div>` : (isRealSuper() ? "" : `<p class="small muted">No reply yet.</p>`)}
+      ${isRealSuper() ? `<form id="f" novalidate style="margin-top:14px"><label>${r.response ? "Update reply" : "Reply"}</label><textarea name="response">${esc(r.response || "")}</textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><select name="status" style="width:auto">${Object.entries(REQ_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? "selected" : ""}>${v}</option>`).join("")}</select><span class="spacer"></span><button type="button" class="btn danger sm" id="del">Delete</button><button class="btn" id="save">Save</button></div></form>` : ""}`, { wide: true });
+    const f = m.el.querySelector("#f");
+    if (f) {
+      f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+        const d = Object.fromEntries(new FormData(f)); const resp = d.response.trim() || null;
+        const upd = { status: d.status, response: resp, responded_at: resp && resp !== r.response ? new Date().toISOString() : (resp ? r.responded_at : null) };
+        const { error } = await sb.from("requests").update(upd).eq("id", r.id); if (error) throw error; m.close(); toast("Saved"); render();
+      }); };
+      m.el.querySelector("#del").onclick = async () => { if (!(await confirmBox("Delete request?", r.subject))) return; const { error } = await sb.from("requests").delete().eq("id", r.id); if (error) fail(error); m.close(); render(); };
+    }
   }
 
   // ------------------------------------------------------------ ACCOUNT

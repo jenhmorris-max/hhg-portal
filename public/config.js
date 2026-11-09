@@ -5,5 +5,5 @@ window.PORTAL_CONFIG = {
   SUPABASE_URL: "https://aghdakzgwmbibkrspilu.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_sMnsYnXtHnaNCfXi43lMzg_fMeGxmI_",
   PORTAL_NAME: "HHG Client Portal",
-  SUPPORT_EMAIL: "jen@hopeharvestgroup.com",
+  SUPPORT_EMAIL: "",   // not shown anywhere; requests go through the in-portal Ask JHM form
 };

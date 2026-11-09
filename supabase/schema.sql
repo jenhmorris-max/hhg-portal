@@ -30,7 +30,7 @@ create table if not exists public.organizations (
   name        text not null,
   slug        text not null unique,
   logo_path   text,
-  accent      text default '#1f4d3a',
+  accent      text default '#23305a',
   created_at  timestamptz not null default now()
 );
 
