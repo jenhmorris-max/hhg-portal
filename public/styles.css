@@ -193,3 +193,27 @@ th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: v
   .row .actions { width: 100%; justify-content: flex-end; }
   h1 { font-size: 24px; }
 }
+
+/* workspace sidebar */
+.ws-card { margin: 0 4px 14px; padding: 12px 12px 12px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); }
+.ws-card.hq { background: var(--ink); }
+.ws-card .ws-name { font-family: var(--serif); font-size: 16px; font-weight: 600; line-height: 1.25; }
+.ws-card .ws-sub { font-size: 12px; opacity: .8; margin-top: 2px; }
+.ws-back { display: inline-block; font-size: 12px; color: inherit !important; opacity: .85; text-decoration: none; margin-bottom: 8px; padding: 0 !important; background: none !important; }
+.ws-back:hover { opacity: 1; text-decoration: underline; }
+.shell.hq .sidenav a.active, .shell.hq .sidenav a:hover { background: #ecebe6; color: var(--ink); }
+.viewas { display: flex; align-items: center; gap: 6px; background: var(--warn-soft); border: 1px solid #f0d9c6; padding: 4px 6px 4px 10px; border-radius: 9px; }
+.viewas select { padding: 5px 8px; font-size: 13px; border-color: transparent; background: #fff; }
+
+/* employee record */
+.three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+h4.sec { margin: 18px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.fld { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.fld span { color: var(--ink-3); flex-shrink: 0; } .fld b { font-weight: 600; text-align: right; }
+.fld:last-child { border-bottom: 0; }
+.sub-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.sub-row:last-child { border-bottom: 0; }
+tr.clickable { cursor: pointer; } tr.clickable:hover td { background: #faf9f5; }
+.late { color: var(--warn); font-weight: 600; }
+select.complete, select.na { color: var(--ok); } select.in_progress { color: var(--warn); }
+@media (max-width: 760px) { .three { grid-template-columns: 1fr; } .viewas span { display: none; } }

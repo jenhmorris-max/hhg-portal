@@ -19,7 +19,10 @@
     role: null,          // 'super' | 'admin' | 'member'
     logoUrl: null,
     recovery: false,
+    viewAs: null,        // super admin previewing as 'admin' | 'member' | null
   };
+  const EMP_STATUS = { onboarding: "Onboarding", active: "Active", leave: "On leave", terminated: "Terminated" };
+  const TASK_STATUS = { pending: "Pending", in_progress: "In progress", complete: "Complete", na: "N/A" };
   const CATS = {
     handbook: "Handbook", policy: "Policies", job_description: "Job descriptions",
     benefits: "Benefits", form: "Forms", hiring_process: "Hiring process", other: "Other",
@@ -38,8 +41,10 @@
   const initials = (n) => (n || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const ext = (name) => (name.split(".").pop() || "").toUpperCase().slice(0, 4);
   const safeName = (n) => n.replace(/[^\w.\-]+/g, "_");
-  const isAdmin = () => S.role === "super" || S.role === "admin";
-  const isSuper = () => S.role === "super";
+  const effRole = () => (S.role === "super" && S.viewAs) ? S.viewAs : S.role;
+  const isAdmin = () => effRole() === "super" || effRole() === "admin";
+  const isSuper = () => effRole() === "super";
+  const isRealSuper = () => S.role === "super";
 
   let toastT;
   function toast(msg, err = false) {
@@ -185,34 +190,40 @@
 
   // ------------------------------------------------------------ shell
   function navItems() {
-    if (!S.org) return isSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }] : [];
+    if (!S.org) return isRealSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }] : [];
     const items = [{ h: "#docs", t: "Documents", i: "▤" }];
-    if (isAdmin()) items.push({ h: "#hiring", t: "Hiring", i: "◫" }, { h: "#people", t: "People", i: "◉" });
-    if (isSuper()) items.push({ h: "#admin", t: "Clients", i: "✦" });
+    if (isAdmin()) items.push({ h: "#employees", t: "Employees", i: "☰" }, { h: "#hiring", t: "Hiring", i: "◫" }, { h: "#people", t: "People", i: "◉" });
     return items;
   }
+  function roleLabel(r) { return r === "super" ? "JHM admin" : r === "admin" ? "Client admin" : "Staff"; }
   function renderShell(inner) {
     const route = (location.hash || "#docs").split("/")[0];
     const nav = navItems();
-    const accent = S.org?.accent || "#1f4d3a";
+    const inWorkspace = !!S.org;
+    const accent = (inWorkspace && S.org.accent) || "#1f4d3a";
     document.documentElement.style.setProperty("--accent", accent);
-    const logo = S.logoUrl ? `<img class="logo" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(S.org?.name || "HH"))}</div>`;
-    const orgSwitch = S.orgs.length > 1 ? `<div class="org-switch"><select id="orgsel">${S.orgs.map((o) => `<option value="${o.id}" ${o.id === S.org?.id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></div>` : "";
+    const logo = inWorkspace && S.logoUrl ? `<img class="logo" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(inWorkspace ? S.org.name : "HH"))}</div>`;
+    const orgSwitch = S.orgs.length > 1 && inWorkspace ? `<div class="org-switch"><select id="orgsel">${S.orgs.map((o) => `<option value="${o.id}" ${o.id === S.org?.id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></div>` : "";
+    const viewAs = isRealSuper() && inWorkspace ? `<div class="viewas"><span class="small muted">View as</span><select id="viewas">
+        <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="admin" ${S.viewAs === "admin" ? "selected" : ""}>Client admin</option><option value="member" ${S.viewAs === "member" ? "selected" : ""}>Staff</option></select></div>` : "";
+    const sideTop = inWorkspace
+      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}<div class="ws-name">${esc(S.org.name)}</div><div class="ws-sub">${isRealSuper() && S.viewAs ? "Previewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</div></div>`
+      : `<div class="ws-card hq"><div class="ws-name">JHM Consulting</div><div class="ws-sub">Portal administration</div></div>`;
     app.innerHTML = `
-      <div class="shell">
+      <div class="shell ${inWorkspace ? "in-ws" : "hq"}">
         <header class="topbar">
-          <div class="brand">${logo}<div><div class="name">${esc(S.org?.name || CFG.PORTAL_NAME)}</div><div class="sub">HR portal · ${S.role === "super" ? "JHM admin" : S.role === "admin" ? "Client admin" : "Staff"}</div></div></div>
-          <div class="spacer"></div>${orgSwitch}
+          <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div><div class="sub">${inWorkspace ? "HR portal" : "The Hope Harvest Group · JHM Consulting"}</div></div></div>
+          <div class="spacer"></div>${viewAs}${orgSwitch}
           <div class="avatar" id="avatar" title="${esc(S.profile.email)}">${esc(initials(S.profile.full_name || S.profile.email))}</div>
           <div class="menu hidden" id="menu"><div class="who"><b>${esc(S.profile.full_name || "")}</b><br><span class="muted">${esc(S.profile.email)}</span></div>
             <button data-go="#account">Account & password</button><button id="signout">Sign out</button></div>
         </header>
         <div class="layout">
-          <nav class="sidenav">${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}">${n.i} ${n.t}</a>`).join("")}
+          <nav class="sidenav">${sideTop}${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}">${n.i} ${n.t}</a>`).join("")}
             <div class="sect">Help</div><a href="mailto:${esc(CFG.SUPPORT_EMAIL)}">✉ Ask JHM</a></nav>
           <main class="main" id="main">${inner}</main>
         </div>
-        <nav class="tabbar">${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}"><span>${n.i}</span>${n.t}</a>`).join("")}</nav>
+        <nav class="tabbar">${(isRealSuper() && inWorkspace ? [{ h: "#admin", t: "Clients", i: "✦" }] : []).concat(nav).map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}"><span>${n.i}</span>${n.t}</a>`).join("")}</nav>
       </div>`;
     const menu = $("#menu");
     $("#avatar").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("hidden"); };
@@ -220,6 +231,7 @@
     $("#signout").onclick = () => sb.auth.signOut();
     menu.querySelector("[data-go]").onclick = () => { location.hash = "#account"; };
     const sel = $("#orgsel"); if (sel) sel.onchange = () => switchOrg(sel.value);
+    const va = $("#viewas"); if (va) va.onchange = () => { S.viewAs = va.value || null; if (!isAdmin() && !["docs", "account"].includes(route.slice(1))) location.hash = "#docs"; else render(); };
   }
 
   // ------------------------------------------------------------ router
@@ -231,13 +243,15 @@
         <a class="btn ghost" href="mailto:${esc(CFG.SUPPORT_EMAIL)}">Email ${esc(CFG.SUPPORT_EMAIL)}</a></div>`);
     }
     let [route, arg] = (location.hash || "#docs").slice(1).split("/");
-    if (!S.org) route = "admin";   // super admin with no clients yet: only the Clients screen makes sense
+    if (route === "admin" && isRealSuper()) { S.org = null; S.viewAs = null; try { localStorage.removeItem("hhg.org"); } catch {} }
+    if (!S.org) route = "admin";   // super admin outside any workspace: the Clients screen
     let html = "";
     const token = (render.seq = (render.seq || 0) + 1);
     try {
       if (route === "hiring" && isAdmin()) html = arg ? await viewJobOrder(arg) : await viewHiring();
+      else if (route === "employees" && isAdmin()) html = arg ? await viewEmployee(arg) : await viewEmployees();
       else if (route === "people" && isAdmin()) html = await viewPeople();
-      else if (route === "admin" && isSuper()) html = await viewAdmin();
+      else if (route === "admin" && isRealSuper()) html = await viewAdmin();
       else if (route === "account") html = viewAccount();
       else html = await viewDocs();
     } catch (e) { fail(e); html = `<div class="empty">Something went wrong loading this page.</div>`; }
@@ -493,6 +507,222 @@
       const { data, error } = await sb.from("candidate_notes").insert({ org_id: S.org.id, candidate_id: c.id, author_id: S.session.user.id, body }).select("*, author:author_id(full_name)").single(); if (error) throw error;
       await log("candidate", c.id, "note", { name: c.full_name, job_order_id: job.id });
       nf.body.value = ""; const box = m.el.querySelector("#notes"); if (box.querySelector("p")) box.innerHTML = ""; box.insertAdjacentHTML("afterbegin", noteHtml(data));
+    }); };
+  }
+
+  // ------------------------------------------------------------ EMPLOYEES (HRIS)
+  let empFilter = "current", empSearch = "";
+  const empName = (e) => `${e.preferred_name || e.first_name} ${e.last_name}`;
+  async function viewEmployees() {
+    const { data: emps, error } = await sb.from("employees").select("*, employee_tasks(status)").eq("org_id", S.org.id).order("last_name").order("first_name");
+    if (error) throw error;
+    const list = emps.filter((e) => (empFilter === "all" || (empFilter === "current" ? e.status !== "terminated" : e.status === empFilter))
+      && (!empSearch || `${e.first_name} ${e.last_name} ${e.preferred_name || ""} ${e.job_title || ""} ${e.department || ""}`.toLowerCase().includes(empSearch.toLowerCase())));
+    const counts = { current: emps.filter((e) => e.status !== "terminated").length, onboarding: 0, active: 0, leave: 0, terminated: 0 };
+    emps.forEach((e) => counts[e.status]++);
+    window.__afterRender = () => {
+      $("#newemp").onclick = () => employeeModal();
+      $("#main").querySelectorAll(".chip").forEach((c) => c.onclick = () => { empFilter = c.dataset.c; render(); });
+      const s = $("#empsearch"); if (s) s.oninput = () => { empSearch = s.value; render(); };
+      const s2 = $("#empsearch"); if (s2) { s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); }
+    };
+    return `
+      <div class="page-head"><div><h1>Employees</h1><p>${esc(S.org.name)}'s employee records and onboarding.</p></div><button class="btn" id="newemp">＋ Add employee</button></div>
+      <div class="filters">${[["current", "Current"], ["onboarding", "Onboarding"], ["active", "Active"], ["leave", "On leave"], ["terminated", "Terminated"], ["all", "All"]].map(([k, v]) => `<button class="chip ${empFilter === k ? "active" : ""}" data-c="${k}">${v}${k !== "all" ? ` (${counts[k]})` : ""}</button>`).join("")}</div>
+      <div class="filters"><input class="search" id="empsearch" type="text" placeholder="Search by name, title, department…" value="${esc(empSearch)}" /></div>
+      ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Employee</th><th>Title</th><th>Department</th><th>Start</th><th>Status</th><th>Onboarding</th></tr></thead><tbody>
+        ${list.map((e) => { const t = e.employee_tasks || []; const done = t.filter((x) => x.status === "complete" || x.status === "na").length;
+          return `<tr class="clickable" data-emp="${e.id}" onclick="location.hash='#employees/${e.id}'"><td><b>${esc(empName(e))}</b>${e.preferred_name ? `<div class="small muted">${esc(e.first_name)} ${esc(e.last_name)}</div>` : ""}</td><td>${esc(e.job_title || "—")}</td><td>${esc(e.department || "—")}</td><td>${fmtDate(e.start_date) || "—"}</td>
+            <td><span class="pill ${e.status === "active" ? "on" : e.status === "onboarding" ? "warn" : ""}">${EMP_STATUS[e.status]}</span></td><td class="small ${done === t.length ? "muted" : ""}">${t.length ? `${done}/${t.length} complete` : "—"}</td></tr>`; }).join("")}
+      </tbody></table></div>`
+      : `<div class="empty"><h3>No employees ${empFilter === "all" ? "yet" : "in this view"}</h3><p>Add an employee to start their onboarding checklist — W-4, I-9, guidebook acknowledgment, state new-hire report and more are created automatically with due dates.</p></div>`}`;
+  }
+
+  const SEL = (name, opts, val, blank = "—") => `<select name="${name}"><option value="">${blank}</option>${opts.map((o) => `<option ${val === o ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+  const INP = (label, name, val, type = "text", ph = "") => `<div><label>${label}</label><input type="${type}" name="${name}" value="${esc(val ?? "")}" placeholder="${esc(ph)}" /></div>`;
+  async function employeeModal(e = null) {
+    const { data: others } = await sb.from("employees").select("id,first_name,last_name").eq("org_id", S.org.id).neq("status", "terminated").order("last_name");
+    const m = modal(`
+      <div class="modal-head"><h3>${e ? "Edit employee" : "Add employee"}</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate>
+        <h4 class="sec">Personal</h4>
+        <div class="three">${INP("First name *", "first_name", e?.first_name)}${INP("Middle", "middle_name", e?.middle_name)}${INP("Last name *", "last_name", e?.last_name)}</div>
+        <div class="three">${INP("Preferred name", "preferred_name", e?.preferred_name)}${INP("Date of birth", "date_of_birth", e?.date_of_birth, "date")}<div><label>Marital status</label>${SEL("marital_status", ["Single", "Married", "Domestic partner", "Divorced", "Widowed"], e?.marital_status)}</div></div>
+        <div class="three"><div><label>Gender</label>${SEL("gender", ["Female", "Male", "Non-binary", "Prefer not to say"], e?.gender)}</div></div>
+        <h4 class="sec">Contact</h4>
+        <div class="two">${INP("Personal email", "personal_email", e?.personal_email, "email")}${INP("Work email", "work_email", e?.work_email, "email")}</div>
+        <div class="two">${INP("Mobile phone", "mobile_phone", e?.mobile_phone, "tel")}${INP("Home phone", "home_phone", e?.home_phone, "tel")}</div>
+        <div class="two">${INP("Address", "address1", e?.address1)}${INP("Apt / Suite", "address2", e?.address2)}</div>
+        <div class="three">${INP("City", "city", e?.city)}${INP("State", "state", e?.state ?? "FL")}${INP("ZIP", "zip", e?.zip)}</div>
+        <h4 class="sec">Employment</h4>
+        <div class="three">${INP("Hire date", "hire_date", e?.hire_date, "date")}${INP("Start date", "start_date", e?.start_date, "date")}<div><label>Status</label><select name="status">${Object.entries(EMP_STATUS).map(([k, v]) => `<option value="${k}" ${(e?.status || "onboarding") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
+        <div class="three">${INP("Job title", "job_title", e?.job_title)}${INP("Department", "department", e?.department)}${INP("Work location", "work_location", e?.work_location)}</div>
+        <div class="three"><div><label>Employee type</label>${SEL("employee_type", ["Full-time", "Part-time", "Temporary", "Seasonal", "Intern", "Contractor"], e?.employee_type)}</div>
+          <div><label>FLSA class</label>${SEL("flsa_class", ["Exempt", "Non-exempt"], e?.flsa_class)}</div>
+          <div><label>Manager</label><select name="manager_id"><option value="">—</option>${(others || []).filter((o) => o.id !== e?.id).map((o) => `<option value="${o.id}" ${e?.manager_id === o.id ? "selected" : ""}>${esc(o.first_name + " " + o.last_name)}</option>`).join("")}</select></div></div>
+        <div class="three"><div><label>Pay type</label>${SEL("pay_type", ["Hourly", "Salary"], e?.pay_type)}</div>${INP("Pay rate", "pay_rate", e?.pay_rate, "number", "0.00")}<div><label>Pay frequency</label>${SEL("pay_frequency", ["Weekly", "Bi-weekly", "Semi-monthly", "Monthly"], e?.pay_frequency)}</div></div>
+        <div class="three">${INP("Scheduled hours / week", "scheduled_hours", e?.scheduled_hours, "number")}</div>
+        ${e ? `<div class="two">${INP("Termination date", "termination_date", e?.termination_date, "date")}${INP("Termination reason", "termination_reason", e?.termination_reason)}</div>` : ""}
+        <label>Notes</label><textarea name="notes">${esc(e?.notes || "")}</textarea>
+        <div class="modal-foot">${e ? `<button type="button" class="btn danger" id="del">Delete record</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${e ? "Save" : "Add employee"}</button></div>
+      </form>`, { wide: true });
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f));
+      if (!d.first_name.trim() || !d.last_name.trim()) throw new Error("First and last name are required.");
+      const rec = {};
+      for (const [k, v] of Object.entries(d)) rec[k] = (typeof v === "string" && v.trim() === "") ? null : (typeof v === "string" ? v.trim() : v);
+      if (rec.pay_rate != null) rec.pay_rate = Number(rec.pay_rate);
+      if (rec.scheduled_hours != null) rec.scheduled_hours = Number(rec.scheduled_hours);
+      if (rec.status === "terminated" && !rec.termination_date) rec.termination_date = new Date().toISOString().slice(0, 10);
+      if (e) { const { error } = await sb.from("employees").update(rec).eq("id", e.id); if (error) throw error; await log("employee", e.id, "updated", { name: rec.first_name + " " + rec.last_name }); m.close(); toast("Saved"); render(); }
+      else { const { data, error } = await sb.from("employees").insert({ ...rec, org_id: S.org.id, created_by: S.session.user.id }).select().single(); if (error) throw error;
+        await log("employee", data.id, "created", { name: rec.first_name + " " + rec.last_name }); m.close(); toast("Employee added"); location.hash = "#employees/" + data.id; }
+    }); };
+    const del = m.el.querySelector("#del");
+    if (del) del.onclick = async () => {
+      if (!(await confirmBox("Delete employee record?", `${empName(e)}'s profile, onboarding files and documents will be permanently deleted. Prefer setting status to Terminated to keep the record.`))) return;
+      try {
+        const [{ data: t }, { data: fl }] = await Promise.all([sb.from("employee_tasks").select("file_path").eq("employee_id", e.id), sb.from("employee_files").select("file_path").eq("employee_id", e.id)]);
+        const paths = [...(t || []), ...(fl || [])].map((x) => x.file_path).filter(Boolean); if (paths.length) await sb.storage.from(BUCKET).remove(paths);
+        const { error } = await sb.from("employees").delete().eq("id", e.id); if (error) throw error;
+        await log("employee", e.id, "deleted", { name: empName(e) }); m.close(); location.hash = "#employees";
+      } catch (err) { fail(err); }
+    };
+  }
+
+  async function viewEmployee(id) {
+    const [{ data: e, error }, { data: tasks }, { data: contacts }, { data: deps }, { data: files }] = await Promise.all([
+      sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("id", id).single(),
+      sb.from("employee_tasks").select("*, completed_by(id,full_name)").eq("employee_id", id).order("sort_order"),
+      sb.from("emergency_contacts").select("*").eq("employee_id", id).order("is_primary", { ascending: false }),
+      sb.from("dependents").select("*").eq("employee_id", id).order("date_of_birth"),
+      sb.from("employee_files").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
+    ]);
+    if (error) throw error;
+    const done = tasks.filter((t) => t.status === "complete" || t.status === "na").length;
+    const today = new Date().toISOString().slice(0, 10);
+    const field = (l, v) => `<div class="fld"><span>${l}</span><b>${v ? esc(v) : "<span class='muted'>—</span>"}</b></div>`;
+    const money = (n) => n == null ? "" : "$" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2 });
+    window.__afterRender = () => {
+      $("#editemp").onclick = () => employeeModal(e);
+      $("#addcontact").onclick = () => contactModal(e);
+      $("#adddep").onclick = () => dependentModal(e);
+      $("#addfile").onclick = () => empFileModal(e);
+      $("#addtask").onclick = () => taskModal(e);
+      $("#main").querySelectorAll("[data-task]").forEach((b) => b.onclick = () => taskModal(e, tasks.find((t) => t.id === b.dataset.task)));
+      $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); openFile(b.dataset.open); });
+      $("#main").querySelectorAll("[data-tstatus]").forEach((sel) => sel.onclick = (ev) => ev.stopPropagation());
+      $("#main").querySelectorAll("[data-tstatus]").forEach((sel) => sel.onchange = async () => {
+        const t = tasks.find((x) => x.id === sel.dataset.tstatus); const status = sel.value;
+        const upd = { status, completed_at: ["complete", "na"].includes(status) ? new Date().toISOString() : null, completed_by: ["complete", "na"].includes(status) ? S.session.user.id : null };
+        try { const { error } = await sb.from("employee_tasks").update(upd).eq("id", t.id); if (error) throw error; await log("employee", e.id, "task_" + status, { name: empName(e), task: t.label }); render(); } catch (err) { fail(err); }
+      });
+      $("#main").querySelectorAll("[data-editcontact]").forEach((b) => b.onclick = () => contactModal(e, contacts.find((c) => c.id === b.dataset.editcontact)));
+      $("#main").querySelectorAll("[data-editdep]").forEach((b) => b.onclick = () => dependentModal(e, deps.find((c) => c.id === b.dataset.editdep)));
+      $("#main").querySelectorAll("[data-delfile]").forEach((b) => b.onclick = async () => {
+        const fl = files.find((x) => x.id === b.dataset.delfile);
+        if (!(await confirmBox("Delete file?", fl.title))) return;
+        try { await sb.storage.from(BUCKET).remove([fl.file_path]); const { error } = await sb.from("employee_files").delete().eq("id", fl.id); if (error) throw error; render(); } catch (err) { fail(err); }
+      });
+    };
+    return `
+      <div class="page-head"><div><a href="#employees" class="small">← All employees</a><h1>${esc(empName(e))}</h1>
+        <p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ")} <span class="pill ${e.status === "active" ? "on" : e.status === "onboarding" ? "warn" : ""}">${EMP_STATUS[e.status]}</span></p></div>
+        <button class="btn quiet" id="editemp">Edit profile</button></div>
+
+      <div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3>Onboarding & compliance <span class="pill ${done === tasks.length ? "on" : ""}">${done}/${tasks.length}</span></h3><button class="btn sm quiet" id="addtask">＋ Add task</button></div>
+        <table style="margin-top:8px"><tbody>${tasks.map((t) => { const late = t.due_date && t.due_date < today && !["complete", "na"].includes(t.status);
+          return `<tr class="clickable" data-task="${t.id}"><td style="width:46%"><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.notes ? `<div class="small">${esc(t.notes)}</div>` : ""}</td>
+            <td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "Due ") + fmtDate(t.due_date) : ""}</td>
+            <td>${t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : `<span class="small muted">No file</span>`}</td>
+            <td style="text-align:right"><select data-tstatus="${t.id}" class="${t.status}" style="width:auto;padding:5px 8px">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+              ${t.completed_at ? `<div class="small muted">${esc(t.completed_by?.full_name || "")} · ${fmtDate(t.completed_at)}</div>` : ""}</td></tr>`; }).join("")}</tbody></table>
+        <p class="small muted" style="margin:10px 0 0">Click a task to upload the completed form or add a note. W-4 and I-9 files are admin-only and never visible to staff.</p></div>
+
+      <div class="two">
+        <div class="card"><h3>Personal</h3>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}${field("Gender", e.gender)}${field("Marital status", e.marital_status)}</div>
+        <div class="card"><h3>Contact</h3>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Home phone", e.home_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
+        <div class="card"><h3>Employment</h3>${field("Hire date", fmtDate(e.hire_date))}${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("FLSA class", e.flsa_class)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Pay", e.pay_type ? `${e.pay_type}${e.pay_rate != null ? " · " + money(e.pay_rate) + (e.pay_type === "Hourly" ? "/hr" : "/yr") : ""}${e.pay_frequency ? " · " + e.pay_frequency : ""}` : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}${e.status === "terminated" ? field("Terminated", fmtDate(e.termination_date) + (e.termination_reason ? " · " + e.termination_reason : "")) : ""}</div>
+        <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Emergency contacts</h3><button class="btn sm quiet" id="addcontact">＋ Add</button></div>
+          ${contacts.length ? contacts.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b> ${c.is_primary ? '<span class="pill on">Primary</span>' : ""}<div class="small muted">${[c.relationship, c.phone, c.alt_phone, c.email].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editcontact="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">None on file.</p>`}</div>
+        <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Dependents</h3><button class="btn sm quiet" id="adddep">＋ Add</button></div>
+          ${deps.length ? deps.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b><div class="small muted">${[c.relationship, c.date_of_birth ? "DOB " + fmtDate(c.date_of_birth) : ""].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editdep="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">None on file.</p>`}</div>
+        <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Documents</h3><button class="btn sm quiet" id="addfile">＋ Upload</button></div>
+          ${files.length ? files.map((fl) => `<div class="sub-row"><div><b>${esc(fl.title)}</b><div class="small muted">${[fl.category, fmtDate(fl.created_at)].filter(Boolean).map(esc).join(" · ")}</div></div><div style="display:flex;gap:6px"><button class="btn sm ghost" data-open="${fl.file_path}">Open</button><button class="btn sm danger" data-delfile="${fl.id}">Delete</button></div></div>`).join("") : `<p class="small muted" style="margin-top:8px">Reviews, write-ups, certifications and other employee files.</p>`}</div>
+        ${e.notes ? `<div class="card" style="grid-column:1/-1"><h3>Notes</h3><p style="white-space:pre-wrap;margin:8px 0 0">${esc(e.notes)}</p></div>` : ""}
+      </div>`;
+  }
+
+  function taskModal(e, t = null) {
+    const m = modal(`
+      <div class="modal-head"><h3>${t ? esc(t.label) : "Add task"}</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate>
+        ${t ? "" : `<label>Task name</label><input type="text" name="label" required placeholder="e.g. Direct deposit form" /><label>Description</label><input type="text" name="description" />`}
+        <div class="two"><div><label>Status</label><select name="status">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${(t?.status || "pending") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        <div><label>Due date</label><input type="date" name="due_date" value="${t?.due_date || ""}" /></div></div>
+        <label>Completed form / file ${t?.file_path ? `<span class="muted">(replace — current: ${esc(t.file_name)})</span>` : ""}</label><input type="file" name="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+        <label>Notes</label><textarea name="notes">${esc(t?.notes || "")}</textarea>
+        <div class="modal-foot">${t && t.task_key === "custom" ? `<button type="button" class="btn danger" id="del">Delete</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Save</button></div>
+      </form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f)); const file = f.file.files[0];
+      const doneNow = ["complete", "na"].includes(d.status);
+      const rec = { status: d.status, due_date: d.due_date || null, notes: d.notes.trim() || null,
+        completed_at: doneNow ? (t?.completed_at || new Date().toISOString()) : null, completed_by: doneNow ? (t?.completed_by?.id || S.session.user.id) : null };
+      if (file) { rec.file_path = await uploadFile(file, "employees/" + e.id); rec.file_name = file.name; if (!doneNow && d.status === "pending") rec.status = "in_progress"; }
+      if (t) { const { error } = await sb.from("employee_tasks").update(rec).eq("id", t.id); if (error) throw error; if (file && t.file_path) await sb.storage.from(BUCKET).remove([t.file_path]); }
+      else { if (!d.label.trim()) throw new Error("Task name is required."); const { error } = await sb.from("employee_tasks").insert({ ...rec, org_id: S.org.id, employee_id: e.id, task_key: "custom", label: d.label.trim(), description: d.description.trim() || null, sort_order: 900 }); if (error) throw error; }
+      await log("employee", e.id, "task_updated", { name: empName(e), task: t?.label || d.label }); m.close(); toast("Saved"); render();
+    }); };
+    const del = m.el.querySelector("#del");
+    if (del) del.onclick = async () => { if (!(await confirmBox("Delete task?", t.label))) return; try { if (t.file_path) await sb.storage.from(BUCKET).remove([t.file_path]); const { error } = await sb.from("employee_tasks").delete().eq("id", t.id); if (error) throw error; m.close(); render(); } catch (err) { fail(err); } };
+  }
+  function contactModal(e, c = null) {
+    const m = modal(`<div class="modal-head"><h3>${c ? "Edit" : "Add"} emergency contact</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate><label>Full name *</label><input type="text" name="full_name" value="${esc(c?.full_name || "")}" />
+        <div class="two"><div><label>Relationship</label>${SEL("relationship", ["Spouse", "Partner", "Parent", "Child", "Sibling", "Friend", "Other"], c?.relationship)}</div>${INP("Phone", "phone", c?.phone, "tel")}</div>
+        <div class="two">${INP("Alternate phone", "alt_phone", c?.alt_phone, "tel")}${INP("Email", "email", c?.email, "email")}</div>
+        <label class="check"><input type="checkbox" name="is_primary" ${c?.is_primary ? "checked" : ""} /> Primary contact</label>
+        <div class="modal-foot">${c ? `<button type="button" class="btn danger" id="del">Remove</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Save</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f)); if (!d.full_name.trim()) throw new Error("Name is required.");
+      const rec = { full_name: d.full_name.trim(), relationship: d.relationship || null, phone: d.phone.trim() || null, alt_phone: d.alt_phone.trim() || null, email: d.email.trim() || null, is_primary: !!d.is_primary };
+      if (rec.is_primary) await sb.from("emergency_contacts").update({ is_primary: false }).eq("employee_id", e.id);
+      const q = c ? sb.from("emergency_contacts").update(rec).eq("id", c.id) : sb.from("emergency_contacts").insert({ ...rec, org_id: S.org.id, employee_id: e.id });
+      const { error } = await q; if (error) throw error; m.close(); render();
+    }); };
+    const del = m.el.querySelector("#del"); if (del) del.onclick = async () => { const { error } = await sb.from("emergency_contacts").delete().eq("id", c.id); if (error) fail(error); m.close(); render(); };
+  }
+  function dependentModal(e, c = null) {
+    const m = modal(`<div class="modal-head"><h3>${c ? "Edit" : "Add"} dependent</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate><label>Full name *</label><input type="text" name="full_name" value="${esc(c?.full_name || "")}" />
+        <div class="two"><div><label>Relationship</label>${SEL("relationship", ["Spouse", "Domestic partner", "Child", "Stepchild", "Other"], c?.relationship)}</div>${INP("Date of birth", "date_of_birth", c?.date_of_birth, "date")}</div>
+        <div class="modal-foot">${c ? `<button type="button" class="btn danger" id="del">Remove</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Save</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f)); if (!d.full_name.trim()) throw new Error("Name is required.");
+      const rec = { full_name: d.full_name.trim(), relationship: d.relationship || null, date_of_birth: d.date_of_birth || null };
+      const q = c ? sb.from("dependents").update(rec).eq("id", c.id) : sb.from("dependents").insert({ ...rec, org_id: S.org.id, employee_id: e.id });
+      const { error } = await q; if (error) throw error; m.close(); render();
+    }); };
+    const del = m.el.querySelector("#del"); if (del) del.onclick = async () => { const { error } = await sb.from("dependents").delete().eq("id", c.id); if (error) fail(error); m.close(); render(); };
+  }
+  function empFileModal(e) {
+    const m = modal(`<div class="modal-head"><h3>Upload employee document</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate><label>Title *</label><input type="text" name="title" placeholder="e.g. 2026 performance review" />
+        <label>Category</label>${SEL("category", ["Review", "Disciplinary", "Certification", "Benefits", "Offer letter", "Separation", "Other"], null, "Select…")}
+        <label>File *</label><input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />
+        <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Upload</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f)); const file = f.file.files[0];
+      if (!d.title.trim()) throw new Error("Title is required."); if (!file) throw new Error("Choose a file.");
+      const path = await uploadFile(file, "employees/" + e.id);
+      const { error } = await sb.from("employee_files").insert({ org_id: S.org.id, employee_id: e.id, title: d.title.trim(), category: d.category || null, file_path: path, file_name: file.name, uploaded_by: S.session.user.id }); if (error) throw error;
+      await log("employee", e.id, "file_added", { name: empName(e), title: d.title.trim() }); m.close(); toast("Uploaded"); render();
     }); };
   }
 
