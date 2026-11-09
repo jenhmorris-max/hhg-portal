@@ -19,7 +19,7 @@ Nobody can see another company's data — the database and the file bucket both 
 
 - **Documents** — per client, by category (Handbook, Policies, Job descriptions, Benefits, Forms, Hiring process, Other), version label, staff-visible toggle, open/download via short-lived signed links.
 - **Employees (HRIS)** — per-client employee records modeled on Employee Navigator: personal, contact/address, employment & pay, emergency contacts, dependents, employee documents, and an onboarding checklist (job description & guidebook acknowledgments, personal info, emergency contact, EEOC self-ID, W-4, I-9, state new-hire report) with auto due dates and a file slot per item. No SSN field by design — it lives only inside the uploaded W-4/I-9.
-- **Hiring** — job orders per client; candidates on a drag-and-drop board (Applied → Screening → Interview → Offer → Hired / Passed), resume upload, notes, activity log of who did what. Shared between you and the client admin.
+- **Hiring** — job orders per client; candidates on a drag-and-drop board (Applied → Screening → Interview → Offer → Hired / Passed), resume upload, notes, attachments (full description, interview guide, scorecard), activity log of who did what. Shared between you and the client admin.
 - **Requests (Ask JHM)** — in-portal contact form; clients file questions, you reply from a cross-client inbox. No email addresses exposed.
 - **People** — members and roles, invite by email, pending invitations.
 - **Clients** (JHM admin only) — create/edit client workspaces, logo and accent color.
@@ -30,7 +30,7 @@ Nobody can see another company's data — the database and the file bucket both 
 
 ### 1. Supabase project
 1. supabase.com → **New project**. Name `hhg-portal`, pick a strong database password (save it in your password manager), region **East US**.
-2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` and `supabase/003_requests.sql`.
+2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql` and `supabase/004_job_files.sql`.
 3. **Authentication → Providers → Email**: leave *Enable email provider* on and *Confirm email* on. Set minimum password length to 10 (Authentication → Policies / Password).
 4. **Authentication → URL Configuration**:
    - Site URL: `https://portal.hopeharvestgroup.com` (or wherever the portal will live; `http://localhost:8080` while testing).
@@ -97,4 +97,5 @@ supabase/
   schema.sql     core tables, triggers, RLS policies, storage bucket + policies
   002_employees.sql  Employees/HRIS tables + onboarding checklist (run after schema.sql)
   003_requests.sql   Ask JHM requests table + navy default accent
+  004_job_files.sql  attachments on job orders
 ```

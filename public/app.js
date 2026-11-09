@@ -380,33 +380,56 @@
         <label>Opened</label><input type="date" name="opened_at" value="${job?.opened_at || new Date().toISOString().slice(0, 10)}" />
         <label>Interview process / job description document</label><select name="process_doc_id"><option value="">— none —</option>${(procDocs || []).map((d) => `<option value="${d.id}" ${job?.process_doc_id === d.id ? "selected" : ""}>${esc(d.title)}</option>`).join("")}</select>
         <label>Notes</label><textarea name="description" placeholder="Pay range, must-haves, interview panel, timeline…">${esc(job?.description || "")}</textarea>
+        <label>Attach a document <span class="muted">(full job description, interview guide — optional, more can be added later)</span></label><input type="file" name="attachment" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.txt" />
         <div class="modal-foot">${job ? `<button type="button" class="btn danger" id="del">Delete</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${job ? "Save" : "Create"}</button></div>
       </form>`);
     const f = m.el.querySelector("#f");
     f.onsubmit = (e) => { e.preventDefault(); busy(m.el.querySelector("#save"), async () => {
       const d = Object.fromEntries(new FormData(f));
       const rec = { title: d.title.trim(), department: d.department.trim() || null, location: d.location.trim() || null, employment_type: d.employment_type, status: d.status, opened_at: d.opened_at || null, process_doc_id: d.process_doc_id || null, description: d.description.trim() || null };
+      let jobId = job?.id;
       if (job) { const { error } = await sb.from("job_orders").update(rec).eq("id", job.id); if (error) throw error; await log("job_order", job.id, "updated", { title: rec.title, status: rec.status }); }
-      else { const { data, error } = await sb.from("job_orders").insert({ ...rec, org_id: S.org.id, created_by: S.session.user.id }).select().single(); if (error) throw error; await log("job_order", data.id, "created", { title: rec.title }); location.hash = "#hiring/" + data.id; }
+      else { const { data, error } = await sb.from("job_orders").insert({ ...rec, org_id: S.org.id, created_by: S.session.user.id }).select().single(); if (error) throw error; jobId = data.id; await log("job_order", data.id, "created", { title: rec.title }); }
+      const att = f.attachment.files[0];
+      if (att) await addJobFile(jobId, att, att.name.replace(/\.[^.]+$/, ""));
+      if (!job) location.hash = "#hiring/" + jobId;
       m.close(); toast("Saved"); render();
     }); };
     const del = m.el.querySelector("#del");
     if (del) del.onclick = async () => {
       if (!(await confirmBox("Delete job order?", "All candidates, resumes and notes in this order will be deleted too."))) return;
       try {
-        const { data: cands } = await sb.from("candidates").select("resume_path").eq("job_order_id", job.id);
-        const paths = (cands || []).map((c) => c.resume_path).filter(Boolean); if (paths.length) await sb.storage.from(BUCKET).remove(paths);
+        const [{ data: cands }, { data: jfiles }] = await Promise.all([sb.from("candidates").select("resume_path").eq("job_order_id", job.id), sb.from("job_order_files").select("file_path").eq("job_order_id", job.id)]);
+        const paths = [...(cands || []).map((c) => c.resume_path), ...(jfiles || []).map((x) => x.file_path)].filter(Boolean); if (paths.length) await sb.storage.from(BUCKET).remove(paths);
         const { error } = await sb.from("job_orders").delete().eq("id", job.id); if (error) throw error;
         await log("job_order", job.id, "deleted", { title: job.title }); m.close(); location.hash = "#hiring";
       } catch (e) { fail(e); }
     };
   }
 
+  async function addJobFile(jobId, file, title) {
+    const path = await uploadFile(file, "jobs/" + jobId);
+    const { error } = await sb.from("job_order_files").insert({ org_id: S.org.id, job_order_id: jobId, title: title || file.name, file_path: path, file_name: file.name, size_bytes: file.size, uploaded_by: S.session.user.id }); if (error) throw error;
+    await log("job_order", jobId, "attachment_added", { file: title || file.name });
+  }
+  function jobFileModal(job) {
+    const m = modal(`<div class="modal-head"><h3>Attach document to ${esc(job.title)}</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate><label>Title</label><input type="text" name="title" placeholder="e.g. Full job description, Interview guide" />
+        <label>File *</label><input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.txt" />
+        <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Upload</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const file = f.file.files[0]; if (!file) throw new Error("Choose a file.");
+      await addJobFile(job.id, file, f.title.value.trim() || file.name.replace(/\.[^.]+$/, ""));
+      m.close(); toast("Attached"); render();
+    }); };
+  }
   async function viewJobOrder(id) {
-    const [{ data: job, error }, { data: cands }, { data: acts }] = await Promise.all([
+    const [{ data: job, error }, { data: cands }, { data: acts }, { data: jfiles }] = await Promise.all([
       sb.from("job_orders").select("*, process_doc:process_doc_id(id,title,file_path)").eq("id", id).single(),
       sb.from("candidates").select("*").eq("job_order_id", id).order("created_at"),
       sb.from("activity_log").select("*, actor:actor_id(full_name)").eq("org_id", S.org.id).in("entity_type", ["job_order", "candidate"]).order("created_at", { ascending: false }).limit(60),
+      sb.from("job_order_files").select("*").eq("job_order_id", id).order("created_at"),
     ]);
     if (error) throw error;
     const candIds = new Set(cands.map((c) => c.id));
@@ -417,6 +440,14 @@
       $("#editjob").onclick = () => jobModal(job);
       $("#addcand").onclick = () => candModal(job);
       const pd = $("#procdoc"); if (pd) pd.onclick = () => openFile(job.process_doc.file_path);
+      $("#addjobfile").onclick = () => jobFileModal(job);
+      $("#main").querySelectorAll("[data-jopen]").forEach((b) => b.onclick = () => openFile(b.dataset.jopen));
+      $("#main").querySelectorAll("[data-jdl]").forEach((b) => b.onclick = () => openFile(b.dataset.jdl, true));
+      $("#main").querySelectorAll("[data-jdel]").forEach((b) => b.onclick = async () => {
+        const fl = (jfiles || []).find((x) => x.id === b.dataset.jdel);
+        if (!(await confirmBox("Delete attachment?", fl.title))) return;
+        try { await sb.storage.from(BUCKET).remove([fl.file_path]); const { error } = await sb.from("job_order_files").delete().eq("id", fl.id); if (error) throw error; await log("job_order", job.id, "attachment_removed", { title: job.title, file: fl.title }); render(); } catch (err) { fail(err); }
+      });
       $("#main").querySelectorAll(".cand").forEach((el) => {
         el.onclick = () => candDetail(cands.find((c) => c.id === el.dataset.c), job);
         el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", el.dataset.c); el.classList.add("drag"); };
@@ -432,7 +463,13 @@
       <div class="page-head"><div><a href="#hiring" class="small">← All job orders</a><h1>${esc(job.title)}</h1>
         <p>${[job.department, job.location, job.employment_type, "Opened " + fmtDate(job.opened_at)].filter(Boolean).map(esc).join(" · ")} · <span class="pill ${job.status === "open" ? "on" : ""}">${JOB_STATUS[job.status]}</span></p></div>
         <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">${job.process_doc ? `<button class="btn quiet" id="procdoc">📄 ${esc(job.process_doc.title)}</button>` : ""}<button class="btn quiet" id="editjob">Edit order</button><button class="btn" id="addcand">＋ Add candidate</button></div></div>
-      ${job.description ? `<div class="card" style="margin-bottom:16px;white-space:pre-wrap">${esc(job.description)}</div>` : ""}
+      <div class="two" style="margin-bottom:16px;align-items:start">
+        <div class="card">${job.description ? `<h3 style="font-size:15px;margin-bottom:6px">Notes</h3><div style="white-space:pre-wrap">${esc(job.description)}</div>` : `<span class="muted small">No notes on this order. Use Edit order to add pay range, must-haves, timeline.</span>`}</div>
+        <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-size:15px">Attachments</h3><button class="btn sm quiet" id="addjobfile">＋ Upload</button></div>
+          ${(jfiles || []).length ? jfiles.map((fl) => `<div class="sub-row"><div><b>${esc(fl.title)}</b><div class="small muted">${esc(fl.file_name)} · ${fmtSize(fl.size_bytes)} · ${fmtDate(fl.created_at)}</div></div>
+            <div style="display:flex;gap:6px"><button class="btn sm ghost" data-jopen="${fl.file_path}">Open</button><button class="btn sm quiet" data-jdl="${fl.file_path}">Download</button><button class="btn sm danger" data-jdel="${fl.id}">Delete</button></div></div>`).join("")
+          : `<p class="small muted" style="margin:8px 0 0">Full job description, interview guide, scorecard, offer template…</p>`}</div>
+      </div>
       <div class="board">${STAGES.map((s) => { const list = cands.filter((c) => c.stage === s); return `<div class="col" data-stage="${s}"><h4>${STAGE_LABEL[s]}<span>${list.length}</span></h4>${list.map(candCard).join("")}</div>`; }).join("")}</div>
       <p class="small muted" style="margin-top:8px">Drag a candidate between columns, or open them to change stage, add notes and view the resume.</p>
       <h3 style="margin:22px 0 8px">Activity</h3>
@@ -447,6 +484,8 @@
       if (a.action === "deleted") return `removed candidate ${d.name}`;
       return `${a.action} ${d.name || ""}`;
     }
+    if (a.action === "attachment_added") return `attached "${d.file}" to the job order`;
+    if (a.action === "attachment_removed") return `removed attachment "${d.file}"`;
     return `${a.action.replace("_", " ")} job order ${d.title ? `"${d.title}"` : ""}`;
   }
   async function setStage(c, stage, job) {
