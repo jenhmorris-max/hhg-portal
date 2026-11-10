@@ -41,10 +41,18 @@
   const initials = (n) => (n || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const ext = (name) => (name.split(".").pop() || "").toUpperCase().slice(0, 4);
   const safeName = (n) => n.replace(/[^\w.\-]+/g, "_");
-  const effRole = () => (S.role === "super" && S.viewAs) ? S.viewAs : S.role;
-  const isAdmin = () => effRole() === "super" || effRole() === "admin";
+  const effRole = () => (S.role === "super" && S.viewAs) ? S.viewAs : (S.role === "admin" ? "owner" : S.role === "member" ? "employee" : S.role);
+  const isAdmin = () => ["super", "owner"].includes(effRole());           // owner-level: users, company settings
+  const isStaff = () => ["super", "owner", "staff"].includes(effRole());  // HR data: employees, hiring, tasks, all documents
   const isSuper = () => effRole() === "super";
   const isRealSuper = () => S.role === "super";
+  const ROLE = {
+    super:    { label: "JHM admin",  short: "JHM",      blurb: "Your HR consultant. Sees and manages every client workspace, replies to requests, and switches modules on or off." },
+    owner:    { label: "Owner",      short: "Owner",    blurb: "The company's owner or administrator. Full workspace: documents, employees, hiring, tasks. Invites users and sets company branding." },
+    staff:    { label: "Staff",      short: "Staff",    blurb: "Chosen staff with HR access. Works in employees, hiring, tasks and all documents. Cannot manage users or settings." },
+    employee: { label: "Employee",   short: "Employee", blurb: "Self-service. Sees their own profile, shared documents like the handbook and benefits, and can ask JHM a question." },
+  };
+  const mods = () => Object.assign({ documents: true, employees: true, hiring: true, tasks: true, requests: true }, S.org?.modules || {});
 
   let toastT;
   function toast(msg, err = false) {
@@ -185,43 +193,51 @@
     try { localStorage.setItem("hhg.org", id); } catch {}
     S.logoUrl = null;
     if (S.org?.logo_path) { try { S.logoUrl = await signedUrl(S.org.logo_path, 3600); } catch {} }
-    location.hash = "#docs"; render();
+    location.hash = "#home"; render();
   }
 
   // ------------------------------------------------------------ shell
   function navItems() {
-    if (!S.org) return isRealSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }, { h: "#requests", t: "Requests", i: "✉" }] : [];
-    const items = [{ h: "#docs", t: "Documents", i: "▤" }];
-    if (isAdmin()) items.push({ h: "#employees", t: "Employees", i: "☰" }, { h: "#hiring", t: "Hiring", i: "◫" }, { h: "#people", t: "People", i: "◉" });
-    items.push({ h: "#requests", t: "Requests", i: "✉" });
+    if (!S.org) return isRealSuper() ? [{ h: "#admin", t: "Clients", i: "✦" }, { h: "#requests", t: "Requests", i: "✉" }, { h: "#settings", t: "Settings", i: "⚙" }] : [];
+    const M = mods(); const items = [{ h: "#home", t: "Home", i: "⌂" }];
+    if (!isStaff() && M.employees) items.push({ h: "#me", t: "My profile", i: "☺" });
+    if (M.documents) items.push({ h: "#docs", t: "Documents", i: "▤" });
+    if (M.employees) items.push({ h: "#org", t: "Org chart", i: "⌥" });
+    if (isStaff()) { if (M.employees) items.push({ h: "#employees", t: "Employees", i: "☰" }); if (M.hiring) items.push({ h: "#hiring", t: "Hiring", i: "◫" }); if (M.tasks && M.employees) items.push({ h: "#tasks", t: "Tasks", i: "☑" }); }
+    if (isAdmin()) items.push({ h: "#people", t: "People", i: "◉" });
+    if (M.requests) items.push({ h: "#requests", t: "Requests", i: "✉" });
+    items.push({ h: "#settings", t: "Settings", i: "⚙" });
     return items;
   }
-  function roleLabel(r) { return r === "super" ? "JHM admin" : r === "admin" ? "Client admin" : "Staff"; }
+  function roleLabel(r) { return (ROLE[r === "admin" ? "owner" : r === "member" ? "employee" : r] || ROLE.employee).label; }
   function renderShell(inner) {
-    const route = (location.hash || "#docs").split("/")[0];
+    const route = (location.hash || "#home").split("/")[0];
     const nav = navItems();
     const inWorkspace = !!S.org;
     const accent = (inWorkspace && S.org.accent) || "#23305a";
-    document.documentElement.style.setProperty("--accent", accent);
+    document.documentElement.style.setProperty("--accent", accent);   // used for the client's monogram / identity only
     const logo = inWorkspace && S.logoUrl ? `<img class="logo wide" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(inWorkspace ? S.org.name : "HH"))}</div>`;
     const orgSwitch = S.orgs.length > 1 && inWorkspace ? `<div class="org-switch"><select id="orgsel">${S.orgs.map((o) => `<option value="${o.id}" ${o.id === S.org?.id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></div>` : "";
     const viewAs = isRealSuper() && inWorkspace ? `<div class="viewas"><span class="small muted">View as</span><select id="viewas">
-        <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="admin" ${S.viewAs === "admin" ? "selected" : ""}>Client admin</option><option value="member" ${S.viewAs === "member" ? "selected" : ""}>Staff</option></select></div>` : "";
+        <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="owner" ${S.viewAs === "owner" ? "selected" : ""}>Owner</option><option value="staff" ${S.viewAs === "staff" ? "selected" : ""}>Staff</option><option value="employee" ${S.viewAs === "employee" ? "selected" : ""}>Employee</option></select></div>` : "";
     const sideTop = inWorkspace
-      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : ""}<div class="ws-name">${esc(S.org.name)}</div><div class="ws-sub">${isRealSuper() && S.viewAs ? "Previewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</div></div>`
-      : `<div class="ws-card hq"><div class="ws-name">JHM Consulting</div><div class="ws-sub">Portal administration</div></div>`;
+      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : `<div class="ws-mono">${esc(initials(S.org.name))}</div>`}<div class="ws-name">${esc(S.org.name)}</div><div class="ws-sub"><span class="rolebadge" title="${esc(ROLE[effRole()]?.blurb || "")}">${isRealSuper() && S.viewAs ? "Viewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</span></div></div>`
+      : `<div class="ws-card hq"><div class="ws-mono">HH</div><div class="ws-name">JHM Consulting</div><div class="ws-sub"><span class="rolebadge">JHM admin</span></div></div>`;
+    let collapsed = false; try { collapsed = localStorage.getItem("hhg.side") === "1"; } catch {}
     app.innerHTML = `
-      <div class="shell ${inWorkspace ? "in-ws" : "hq"}">
+      <div class="shell ${inWorkspace ? "in-ws" : "hq"} ${collapsed ? "collapsed" : ""}">
         <header class="topbar">
-          <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div><div class="sub">${inWorkspace ? "HR portal" : "The Hope Harvest Group · JHM Consulting"}</div></div></div>
+          <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div><div class="sub">${inWorkspace ? roleLabel(effRole()) + " view" : "The Hope Harvest Group · JHM Consulting"}</div></div></div>
+          ${inWorkspace ? `<button class="searchbar" id="opensearch"><span>⌕</span><span class="ph">Search people, jobs, tasks, documents…</span><kbd>⌘K</kbd></button>` : ""}
           <div class="spacer"></div>${viewAs}${orgSwitch}
           <div class="avatar" id="avatar" title="${esc(S.profile.email)}">${esc(initials(S.profile.full_name || S.profile.email))}</div>
           <div class="menu hidden" id="menu"><div class="who"><b>${esc(S.profile.full_name || "")}</b><br><span class="muted">${esc(S.profile.email)}</span></div>
-            <button data-go="#account">Account & password</button><button id="signout">Sign out</button></div>
+            <button data-go="#settings">Settings</button><button id="signout">Sign out</button></div>
         </header>
         <div class="layout">
-          <nav class="sidenav">${sideTop}${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}">${n.i} ${n.t}</a>`).join("")}
-            ${inWorkspace ? `<div class="sect">Help</div><a href="#" id="askjhm">✉ Ask JHM</a>` : ""}</nav>
+          <nav class="sidenav">${sideTop}${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}" title="${n.t}"><i>${n.i}</i><span class="lbl">${n.t}</span></a>`).join("")}
+            ${inWorkspace && mods().requests ? `<div class="sect lbl">Help</div><a href="#" id="askjhm" title="Ask JHM"><i>✉</i><span class="lbl">Ask JHM</span></a>` : ""}
+            <button class="collapse" id="collapse" title="${collapsed ? "Expand" : "Collapse"} sidebar">${collapsed ? "»" : "«"}<span class="lbl"> Collapse</span></button></nav>
           <main class="main" id="main">${inner}</main>
         </div>
         <nav class="tabbar">${(isRealSuper() && inWorkspace ? [{ h: "#admin", t: "Clients", i: "✦" }] : []).concat(nav).map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}"><span>${n.i}</span>${n.t}</a>`).join("")}</nav>
@@ -230,10 +246,12 @@
     $("#avatar").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("hidden"); };
     document.addEventListener("click", () => menu.classList.add("hidden"), { once: true });
     $("#signout").onclick = () => sb.auth.signOut();
-    menu.querySelector("[data-go]").onclick = () => { location.hash = "#account"; };
+    menu.querySelector("[data-go]").onclick = () => { location.hash = "#settings"; };
+    const os = $("#opensearch"); if (os) os.onclick = () => openSearch();
+    $("#collapse").onclick = () => { try { localStorage.setItem("hhg.side", collapsed ? "0" : "1"); } catch {} render(); };
     const sel = $("#orgsel"); if (sel) sel.onchange = () => switchOrg(sel.value);
     const ask = $("#askjhm"); if (ask) ask.onclick = (e) => { e.preventDefault(); requestModal(); };
-    const va = $("#viewas"); if (va) va.onchange = () => { S.viewAs = va.value || null; if (!isAdmin() && !["docs", "account"].includes(route.slice(1))) location.hash = "#docs"; else render(); };
+    const va = $("#viewas"); if (va) va.onchange = () => { S.viewAs = va.value || null; const ok = navItems().some((n) => n.h === route); if (!ok) location.hash = "#home"; else render(); };
   }
 
   // ------------------------------------------------------------ router
@@ -244,19 +262,26 @@
       return renderShell(`<div class="empty"><h3>No access yet</h3><p>Your account isn't attached to a client workspace.<br>Ask your HR consultant to invite <b>${esc(S.profile.email)}</b>.</p>
         </div>`);
     }
-    let [route, arg] = (location.hash || "#docs").slice(1).split("/");
+    let [route, arg] = (location.hash || "#home").slice(1).split("/");
+    if (route === "account") route = "settings";
     if ((route === "admin" || (route === "requests" && !S.org)) && isRealSuper()) { S.org = null; S.viewAs = null; try { localStorage.removeItem("hhg.org"); } catch {} }
-    if (!S.org && route !== "requests") route = "admin";   // super admin outside any workspace
+    if (!S.org && !["requests", "settings"].includes(route)) route = "admin";   // super admin outside any workspace
     let html = "";
     const token = (render.seq = (render.seq || 0) + 1);
     try {
-      if (route === "hiring" && isAdmin()) html = arg ? await viewJobOrder(arg) : await viewHiring();
-      else if (route === "employees" && isAdmin()) html = arg ? await viewEmployee(arg) : await viewEmployees();
+      const M = mods();
+      if (route === "hiring" && isStaff() && M.hiring) html = arg ? await viewJobOrder(arg) : await viewHiring();
+      else if (route === "employees" && isStaff() && M.employees) html = arg ? await viewEmployee(arg) : await viewEmployees();
+      else if (route === "me" && M.employees) html = await viewMyProfile();
+      else if (route === "org" && M.employees) html = await viewOrgChart();
       else if (route === "people" && isAdmin()) html = await viewPeople();
       else if (route === "admin" && isRealSuper()) html = await viewAdmin();
-      else if (route === "requests") html = await viewRequests();
-      else if (route === "account") html = viewAccount();
-      else html = await viewDocs();
+      else if (route === "requests" && (!S.org || M.requests)) html = await viewRequests();
+      else if (route === "tasks" && isStaff() && M.tasks) html = await viewTasks();
+      else if (route === "settings") html = await viewSettings();
+      else if (route === "home") html = await viewHome();
+      else if (M.documents || !S.org) html = await viewDocs();
+      else html = await viewHome();
     } catch (e) { fail(e); html = `<div class="empty">Something went wrong loading this page.</div>`; }
     if (token !== render.seq) return;   // a newer render superseded this one
     renderShell(html);
@@ -299,15 +324,15 @@
       <div class="row"><div class="icon">${esc(ext(d.file_name))}</div>
         <div class="grow"><div class="title">${esc(d.title)}</div>
           <div class="meta"><span>${CATS[d.category]}</span>${d.version_label ? `<span>${esc(d.version_label)}</span>` : ""}<span>Updated ${fmtDate(d.updated_at)}</span><span>${fmtSize(d.size_bytes)}</span>
-          ${isAdmin() ? `<span class="pill ${d.staff_visible ? "on" : ""}">${d.staff_visible ? "Staff can view" : "Admins only"}</span>` : ""}</div>
+          ${isStaff() ? `<span class="pill ${d.staff_visible ? "on" : ""}">${d.staff_visible ? "Shared with employees" : "HR only"}</span>` : ""}</div>
           ${d.description ? `<div class="small muted">${esc(d.description)}</div>` : ""}</div>
         <div class="actions"><button class="btn sm ghost" data-open="${d.file_path}" data-id="${d.id}">Open</button><button class="btn sm quiet" data-dl="${d.file_path}">Download</button>
-          ${isAdmin() ? `<button class="btn sm quiet" data-edit="${d.id}">Edit</button><button class="btn sm danger" data-del="${d.id}">Delete</button>` : ""}</div></div>`).join("")
-      : `<div class="empty"><h3>No documents here yet</h3><p>${isAdmin() ? "Upload a handbook, policy, job description or benefits handout to get started." : "Your HR consultant hasn't shared anything in this category yet."}</p></div>`;
+          ${isStaff() ? `<button class="btn sm quiet" data-edit="${d.id}">Edit</button><button class="btn sm danger" data-del="${d.id}">Delete</button>` : ""}</div></div>`).join("")
+      : `<div class="empty"><h3>No documents here yet</h3><p>${isStaff() ? "Upload a handbook, policy, job description or benefits handout to get started." : "Your HR consultant hasn't shared anything in this category yet."}</p></div>`;
 
     return `
-      <div class="page-head"><div><h1>Documents</h1><p>${isAdmin() ? "Everything you've shared with " + esc(S.org.name) + "." : "Your company's HR documents, shared by JHM Consulting."}</p></div>
-        ${isAdmin() ? `<button class="btn" id="upload">＋ Upload document</button>` : ""}</div>
+      <div class="page-head"><div><h1>Documents</h1><p>${isStaff() ? "Everything you've shared with " + esc(S.org.name) + "." : "Your company's HR documents, shared by JHM Consulting."}</p></div>
+        ${isStaff() ? `<button class="btn" id="upload">＋ Upload document</button>` : ""}</div>
       <div class="filters"><button class="chip ${docFilter === "all" ? "active" : ""}" data-c="all">All (${docs.length})</button>
         ${Object.keys(CATS).filter((c) => counts[c]).map((c) => `<button class="chip ${docFilter === c ? "active" : ""}" data-c="${c}">${CATS[c]} (${counts[c]})</button>`).join("")}</div>
       <div class="filters"><input class="search" id="docsearch" type="text" placeholder="Search documents…" value="${esc(docSearch)}" /></div>
@@ -323,7 +348,7 @@
         <div><label>Version label</label><input type="text" name="version_label" value="${esc(doc?.version_label || "")}" placeholder="v2 — Nov 2026" /></div></div>
         <label>Description <span class="muted">(optional)</span></label><textarea name="description" placeholder="What this is and when to use it">${esc(doc?.description || "")}</textarea>
         <label>${doc ? "Replace file (optional)" : "File"}</label><input type="file" name="file" ${doc ? "" : "required"} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.txt,.csv" />
-        <label class="check"><input type="checkbox" name="staff_visible" ${doc?.staff_visible ? "checked" : ""} /> Visible to client staff (members) — leave off for admin-only items</label>
+        <label class="check"><input type="checkbox" name="staff_visible" ${doc?.staff_visible ? "checked" : ""} /> Share with employees (self-service) — leave off for HR-only items</label>
         <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${doc ? "Save changes" : "Upload"}</button></div>
       </form>`);
     const f = m.el.querySelector("#f");
@@ -591,7 +616,7 @@
         <div class="three">${INP("First name *", "first_name", e?.first_name)}${INP("Middle", "middle_name", e?.middle_name)}${INP("Last name *", "last_name", e?.last_name)}</div>
         <div class="three">${INP("Preferred name", "preferred_name", e?.preferred_name)}${INP("Date of birth", "date_of_birth", e?.date_of_birth, "date")}<div><label>Marital status</label>${SEL("marital_status", ["Single", "Married", "Domestic partner", "Divorced", "Widowed"], e?.marital_status)}</div></div>
         <div class="three"><div><label>Gender</label>${SEL("gender", ["Female", "Male", "Non-binary", "Prefer not to say"], e?.gender)}</div></div>
-        <h4 class="sec">Contact</h4>
+        <h4 class="sec">Contact</h4><p class="small muted" style="margin:4px 0 0">If an email here matches a portal user invited as <b>Employee</b>, their self-service profile links automatically.</p>
         <div class="two">${INP("Personal email", "personal_email", e?.personal_email, "email")}${INP("Work email", "work_email", e?.work_email, "email")}</div>
         <div class="two">${INP("Mobile phone", "mobile_phone", e?.mobile_phone, "tel")}${INP("Home phone", "home_phone", e?.home_phone, "tel")}</div>
         <div class="two">${INP("Address", "address1", e?.address1)}${INP("Apt / Suite", "address2", e?.address2)}</div>
@@ -797,19 +822,22 @@
       <div class="page-head"><div><h1>People</h1><p>Who can sign in to ${esc(S.org.name)}, and what they can see.</p></div><button class="btn" id="invite">＋ Invite someone</button></div>
       <div class="card" style="margin-bottom:14px"><table><thead><tr><th>Name</th><th>Email</th><th>Access</th><th></th></tr></thead><tbody>
         ${mems.map((m) => `<tr><td><b>${esc(m.profile?.full_name || "—")}</b>${m.user_id === me ? ' <span class="pill">you</span>' : ""}</td><td class="muted">${esc(m.profile?.email || "")}</td>
-          <td>${m.user_id === me && !isSuper() ? `<span class="pill on">Admin</span>` : `<select data-role="${m.id}" style="width:auto;padding:5px 8px"><option value="admin" ${m.role === "admin" ? "selected" : ""}>Admin</option><option value="member" ${m.role === "member" ? "selected" : ""}>Staff</option></select>`}</td>
+          <td>${m.user_id === me && !isSuper() ? `<span class="pill on">Owner</span>` : `<select data-role="${m.id}" style="width:auto;padding:5px 8px">${["owner", "staff", "employee"].map((r) => `<option value="${r}" ${(m.role === r || (r === "owner" && m.role === "admin") || (r === "employee" && m.role === "member")) ? "selected" : ""}>${ROLE[r].label}</option>`).join("")}</select>`}</td>
           <td style="text-align:right">${m.user_id === me && !isSuper() ? "" : `<button class="btn sm danger" data-rm="${m.id}">Remove</button>`}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No members yet.</td></tr>`}
       </tbody></table></div>
       <h3 style="margin:18px 0 8px">Pending invitations</h3>
-      <div class="card">${(invs || []).length ? `<table><tbody>${invs.map((i) => `<tr><td>${esc(i.email)}</td><td><span class="pill">${i.role === "admin" ? "Admin" : "Staff"}</span></td><td class="muted small">Invited ${fmtDate(i.created_at)}</td><td style="text-align:right"><button class="btn sm quiet" data-resend="${esc(i.email)}">Resend</button> <button class="btn sm quiet" data-rminv="${i.id}">Cancel</button></td></tr>`).join("")}</tbody></table>`
+      <div class="card">${(invs || []).length ? `<table><tbody>${invs.map((i) => `<tr><td>${esc(i.email)}</td><td><span class="pill">${roleLabel(i.role)}</span></td><td class="muted small">Invited ${fmtDate(i.created_at)}</td><td style="text-align:right"><button class="btn sm quiet" data-resend="${esc(i.email)}">Resend</button> <button class="btn sm quiet" data-rminv="${i.id}">Cancel</button></td></tr>`).join("")}</tbody></table>`
         : `<span class="muted small">No pending invitations. Invited people receive a sign-in link by email and get access the moment they use it.</span>`}</div>
-      <div class="notice" style="margin-top:14px"><b>Access levels.</b> <b>Admin</b> sees everything for this company: all documents, hiring boards, resumes, and can invite others. <b>Staff</b> can only open documents marked “visible to client staff” — handbooks and benefits handouts, for example.</div>`;
+      ${rolesExplainer()}`;
+  }
+  function rolesExplainer() {
+    return `<div class="roles"><div class="eyebrow" style="margin-bottom:8px">Who sees what</div><div class="roles-grid">${["super", "owner", "staff", "employee"].map((r) => `<div class="role ${effRole() === r ? "me" : ""}"><b>${ROLE[r].label}${effRole() === r ? ' <span class="pill on">you</span>' : ""}</b><p>${ROLE[r].blurb}</p></div>`).join("")}</div></div>`;
   }
   function inviteModal() {
     const m = modal(`
       <div class="modal-head"><h3>Invite to ${esc(S.org.name)}</h3><button class="x" data-close>×</button></div>
       <form id="f"><label>Email address</label><input type="email" name="email" required />
-        <label>Access level</label><select name="role"><option value="admin">Admin — full access (owner / manager)</option><option value="member">Staff — shared documents only</option></select>
+        <label>Access level</label><select name="role"><option value="owner">Owner — full workspace, invites users, company settings</option><option value="staff" selected>Staff — employees, hiring, tasks, all documents</option><option value="employee">Employee — self-service: own profile, shared documents, Ask JHM</option></select>
         <p class="small muted" style="margin-top:12px">They'll get an email with a secure sign-in link. On first sign-in they set their name and password. If they already have an account, access is granted immediately.</p>
         <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Invite</button></div></form>`);
     const f = m.el.querySelector("#f");
@@ -838,6 +866,7 @@
     return `
       <div class="page-head"><div><h1>Clients</h1><p>Every company workspace in the portal. Enter one to manage its documents, hiring and people.</p></div><button class="btn" id="neworg">＋ New client</button></div>
       <div class="grid">${orgs.map((o) => `<div class="card"><div style="display:flex;gap:12px;align-items:center"><div class="icon" style="background:${esc(o.accent || "#23305a")};color:#fff">${esc(initials(o.name))}</div><div class="grow"><h3>${esc(o.name)}</h3><div class="small muted">${o.memberships?.[0]?.count ?? 0} users · ${o.documents?.[0]?.count ?? 0} docs · ${o.job_orders?.[0]?.count ?? 0} job orders</div></div></div>
+        <div class="modpills">${["documents", "employees", "hiring", "tasks", "requests"].map((k) => `<span class="pill ${(Object.assign({ documents: true, employees: true, hiring: true, tasks: true, requests: true }, o.modules || {}))[k] ? "on" : "off"}">${k[0].toUpperCase() + k.slice(1)}</span>`).join("")}</div>
         <div style="display:flex;gap:8px;margin-top:14px"><button class="btn sm" data-enter="${o.id}">Enter workspace</button><button class="btn sm quiet" data-edit="${o.id}">Settings</button></div></div>`).join("")
         || `<div class="empty" style="grid-column:1/-1"><h3>No clients yet</h3><p>Create your first client workspace, then invite their owner as an admin.</p></div>`}</div>`;
   }
@@ -847,13 +876,16 @@
       <form id="f" novalidate><label>Company name</label><input type="text" name="company_name" required value="${esc(o?.name || "")}" placeholder="e.g. White House Custom Apparel & Graphics" />
         <div class="two"><div><label>Accent color</label><input type="text" name="accent" value="${esc(o?.accent || "#23305a")}" placeholder="#23305a" /></div>
         <div><label>Logo ${o?.logo_path ? "<span class='muted'>(replace)</span>" : ""}</label><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml" /></div></div>
-        <div class="modal-foot">${o ? `<button type="button" class="btn danger" id="del">Delete client</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${o ? "Save" : "Create"}</button></div></form>`);
+        <h4 class="sec">Modules</h4><p class="small muted" style="margin:6px 0 4px">Switch on what this client needs. Hidden modules disappear from their workspace entirely.</p>
+        <div class="modgrid">${[["documents", "Documents", "Handbook, policies, benefits, forms"], ["employees", "Employees", "HRIS records, onboarding checklists, self-service profiles"], ["hiring", "Hiring", "Job orders, candidates, resumes"], ["tasks", "Tasks", "Cross-employee compliance task list"], ["requests", "Requests", "Ask JHM contact form and inbox"]].map(([k, t, d]) => { const cur = Object.assign({ documents: true, employees: true, hiring: true, tasks: true, requests: true }, o?.modules || {}); return `<label class="mod"><input type="checkbox" name="mod_${k}" ${cur[k] ? "checked" : ""} /><span><b>${t}</b><small>${d}</small></span></label>`; }).join("")}</div>
+        <div class="modal-foot">${o ? `<button type="button" class="btn danger" id="del">Delete client</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${o ? "Save" : "Create"}</button></div></form>`, { wide: true });
     const f = m.el.querySelector("#f");
     f.onsubmit = (e) => { e.preventDefault(); busy(m.el.querySelector("#save"), async () => {
       const d = Object.fromEntries(new FormData(f)); const logo = f.logo.files[0];
       const name = (d.company_name || "").trim();
       if (!name) throw new Error("Please enter the company name.");
-      const rec = { name, accent: /^#[0-9a-fA-F]{6}$/.test((d.accent || "").trim()) ? d.accent.trim() : "#23305a" };
+      const modules = Object.fromEntries(["documents", "employees", "hiring", "tasks", "requests"].map((k) => [k, !!d["mod_" + k]]));
+      const rec = { name, modules, accent: /^#[0-9a-fA-F]{6}$/.test((d.accent || "").trim()) ? d.accent.trim() : "#23305a" };
       let orgId = o?.id;
       if (o) { const { error } = await sb.from("organizations").update(rec).eq("id", o.id); if (error) throw error; }
       else {
@@ -906,7 +938,7 @@
     if (S.org) q = q.eq("org_id", S.org.id);
     const { data: reqs, error } = await q; if (error) throw error;
     const list = reqs.filter((r) => reqFilter === "all" || (reqFilter === "open" ? r.status !== "resolved" : r.status === reqFilter));
-    const mineOnly = S.org && !isAdmin();
+    const mineOnly = S.org && !isStaff();
     window.__afterRender = () => {
       const nb = $("#newreq"); if (nb) nb.onclick = () => requestModal();
       $("#main").querySelectorAll(".chip").forEach((c) => c.onclick = () => { reqFilter = c.dataset.c; render(); });
@@ -939,19 +971,253 @@
     }
   }
 
-  // ------------------------------------------------------------ ACCOUNT
-  function viewAccount() {
+  // ------------------------------------------------------------ HOME
+  async function viewHome() {
+    const today = new Date(); const iso = (d) => d.toISOString().slice(0, 10);
+    const soon = iso(new Date(today.getTime() + 7 * 864e5)), t0 = iso(today);
+    const first = (S.profile.full_name || "").split(" ")[0];
+    const hour = today.getHours(); const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    if (!isStaff()) {
+      const [{ data: docs }, { data: reqs }] = await Promise.all([
+        sb.from("documents").select("id,title,category,file_path,updated_at").eq("org_id", S.org.id).order("updated_at", { ascending: false }).limit(6),
+        sb.from("requests").select("id,subject,status,created_at").eq("org_id", S.org.id).eq("user_id", S.session.user.id).order("created_at", { ascending: false }).limit(5),
+      ]);
+      window.__afterRender = () => { $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openFile(b.dataset.open)); const a = $("#ask"); if (a) a.onclick = () => requestModal(); const a2 = $("#ask2"); if (a2) a2.onclick = () => requestModal(); };
+      return `<div class="hero"><div class="eyebrow">${esc(S.org.name)}</div><h1>${greet}${first ? ", " + esc(first) : ""}.</h1><p>Your profile, your company's HR documents, and a direct line to your HR consultant.</p></div>
+        ${mods().employees ? `<div class="quick"><a class="btn sm" href="#me">My profile</a><a class="btn sm quiet" href="#docs">Documents</a><button class="btn sm quiet" id="ask2">Ask JHM</button></div>` : ""}
+        <div class="two"><div class="card"><h3>Recent documents</h3>${(docs || []).length ? docs.map((d) => `<div class="sub-row"><div><b>${esc(d.title)}</b><div class="small muted">${CATS[d.category]} · ${fmtDate(d.updated_at)}</div></div><button class="btn sm ghost" data-open="${d.file_path}">Open</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Nothing shared yet.</p>`}<a href="#docs" class="small" style="display:inline-block;margin-top:10px">All documents →</a></div>
+        <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Your requests</h3><button class="btn sm" id="ask">Ask JHM</button></div>${(reqs || []).length ? reqs.map((r) => `<div class="sub-row"><div><b>${esc(r.subject)}</b><div class="small muted">${fmtDate(r.created_at)}</div></div><span class="pill ${r.status === "resolved" ? "" : "on"}">${REQ_STATUS[r.status]}</span></div>`).join("") : `<p class="small muted" style="margin-top:8px">No questions yet.</p>`}</div></div>`;
+    }
+    const [{ data: emps }, { data: jobs }, { data: tasks }, { data: reqs }, { data: acts }, { data: docs }] = await Promise.all([
+      sb.from("employees").select("id,status").eq("org_id", S.org.id),
+      sb.from("job_orders").select("id,title,status,candidates(stage)").eq("org_id", S.org.id).in("status", ["open", "on_hold"]),
+      sb.from("employee_tasks").select("id,label,due_date,status,employee_id,employees(first_name,last_name,preferred_name)").eq("org_id", S.org.id).in("status", ["pending", "in_progress"]).not("due_date", "is", null).lte("due_date", soon).order("due_date").limit(12),
+      sb.from("requests").select("id,subject,status,urgency,created_at").eq("org_id", S.org.id).neq("status", "resolved").order("created_at", { ascending: false }).limit(5),
+      sb.from("activity_log").select("*, actor:actor_id(full_name)").eq("org_id", S.org.id).order("created_at", { ascending: false }).limit(8),
+      sb.from("documents").select("id", { count: "exact", head: true }).eq("org_id", S.org.id),
+    ]);
+    const E = emps || [], J = jobs || [], T = tasks || [], R = reqs || [];
+    const overdue = T.filter((t) => t.due_date < t0);
+    const activeCands = J.reduce((n, j) => n + j.candidates.filter((c) => !["hired", "passed"].includes(c.stage)).length, 0);
+    window.__afterRender = () => {
+      $("#main").querySelectorAll("[data-act]").forEach((b) => b.onclick = () => ({ emp: () => employeeModal(), doc: () => docModal(), job: () => jobModal(), inv: () => inviteModal(), ask: () => requestModal(), srch: () => openSearch() })[b.dataset.act]());
+      $("#main").querySelectorAll("[data-req]").forEach((el) => el.onclick = () => requestDetail(R.find((r) => r.id === el.dataset.req)));
+    };
+    const tile = (n, l, h, warn) => `<a href="${h}" class="tile ${warn && n ? "warn" : ""}"><b>${n}</b><span>${l}</span></a>`;
+    return `
+      <div class="hero"><div class="eyebrow">${esc(S.org.name)} · ${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</div><h1>${greet}${first ? ", " + esc(first) : ""}.</h1>
+        <p>${overdue.length ? `<b class="late">${overdue.length} overdue task${overdue.length > 1 ? "s" : ""}</b> need attention.` : T.length ? `${T.length} task${T.length > 1 ? "s" : ""} due in the next week.` : "Everything is on schedule."}${R.length ? ` ${R.length} open request${R.length > 1 ? "s" : ""}.` : ""}</p></div>
+      <div class="tiles">${tile(E.filter((e) => e.status === "active").length, "Active employees", "#employees")}${tile(E.filter((e) => e.status === "onboarding").length, "Onboarding", "#employees", true)}${tile(J.length, "Open positions", "#hiring")}${tile(activeCands, "Active candidates", "#hiring")}${tile(overdue.length, "Overdue tasks", "#tasks", true)}${tile(R.length, "Open requests", "#requests", true)}</div>
+      <div class="quick"><span class="eyebrow">Quick actions</span><button class="btn sm" data-act="emp">＋ Employee</button><button class="btn sm quiet" data-act="job">＋ Job order</button><button class="btn sm quiet" data-act="doc">↑ Upload document</button><button class="btn sm quiet" data-act="inv">Invite user</button><button class="btn sm quiet" data-act="ask">Ask JHM</button><button class="btn sm quiet" data-act="srch">⌕ Search</button></div>
+      <div class="two" style="align-items:start">
+        <div class="card"><div class="card-head"><h3>Needs attention</h3><a href="#tasks" class="small">All tasks →</a></div>
+          ${T.length ? T.map((t) => { const late = t.due_date < t0; const e = t.employees || {}; return `<a class="sub-row link" href="#employees/${t.employee_id}"><div><b>${esc(t.label)}</b><div class="small muted">${esc((e.preferred_name || e.first_name || "") + " " + (e.last_name || ""))}</div></div><span class="small ${late ? "late" : "muted"}">${late ? "Overdue · " : "Due "}${fmtDate(t.due_date)}</span></a>`; }).join("") : `<p class="small muted" style="margin-top:8px">Nothing due in the next 7 days.</p>`}</div>
+        <div class="card"><div class="card-head"><h3>Open requests</h3><a href="#requests" class="small">All →</a></div>
+          ${R.length ? R.map((r) => `<div class="sub-row link" data-req="${r.id}"><div><b>${esc(r.subject)}</b><div class="small muted">${fmtDT(r.created_at)}${r.urgency === "Urgent" ? ' · <span class="late">Urgent</span>' : ""}</div></div><span class="pill ${r.status === "new" ? "warn" : "on"}">${REQ_STATUS[r.status]}</span></div>`).join("") : `<p class="small muted" style="margin-top:8px">No open requests.</p>`}</div>
+        <div class="card" style="grid-column:1/-1"><div class="card-head"><h3>Recent activity</h3></div>
+          ${(acts || []).length ? acts.map((a) => `<div class="act"><time>${fmtDT(a.created_at)}</time><b>${esc(a.actor?.full_name || "Someone")}</b> ${esc(actAny(a))}</div>`).join("") : `<p class="small muted">No activity yet.</p>`}</div>
+      </div>`;
+  }
+  function actAny(a) {
+    const d = a.detail || {};
+    if (a.entity_type === "job_order" || a.entity_type === "candidate") return actText(a);
+    if (a.entity_type === "document") return `${a.action} document${d.title ? ` "${d.title}"` : ""}`;
+    if (a.entity_type === "employee") { if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
+    if (a.entity_type === "membership") return a.action === "invited" ? `invited ${d.email} as ${d.role}` : `${a.action} ${d.email || "a user"}`;
+    if (a.entity_type === "request") return `sent a request: "${d.subject}"`;
+    return `${a.action} ${a.entity_type}`;
+  }
+
+  // ------------------------------------------------------------ MY PROFILE (employee self-service)
+  async function viewMyProfile() {
+    const { data: e } = await sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("org_id", S.org.id).eq("user_id", S.session.user.id).maybeSingle();
+    if (!e) return `<div class="hero"><div class="eyebrow">${esc(S.org.name)}</div><h1>My profile</h1></div><div class="empty"><h3>Your employee record isn't linked yet</h3><p>Your administrator adds your record and links it to <b>${esc(S.profile.email)}</b>. Until then, your documents and Ask JHM are available from the sidebar.</p></div>`;
+    const [{ data: tasks }, { data: contacts }, { data: deps }] = await Promise.all([
+      sb.from("employee_tasks").select("id,label,status,due_date,completed_at").eq("employee_id", e.id).order("sort_order"),
+      sb.from("emergency_contacts").select("*").eq("employee_id", e.id).order("is_primary", { ascending: false }),
+      sb.from("dependents").select("*").eq("employee_id", e.id).order("date_of_birth"),
+    ]);
+    const field = (l, v) => `<div class="fld"><span>${l}</span><b>${v ? esc(v) : "<span class='muted'>—</span>"}</b></div>`;
+    const done = (tasks || []).filter((t) => ["complete", "na"].includes(t.status)).length;
+    window.__afterRender = () => {
+      $("#addcontact").onclick = () => contactModal(e);
+      $("#adddep").onclick = () => dependentModal(e);
+      $("#main").querySelectorAll("[data-editcontact]").forEach((b) => b.onclick = () => contactModal(e, contacts.find((c) => c.id === b.dataset.editcontact)));
+      $("#main").querySelectorAll("[data-editdep]").forEach((b) => b.onclick = () => dependentModal(e, deps.find((c) => c.id === b.dataset.editdep)));
+      const a = $("#askchange"); if (a) a.onclick = () => requestModal();
+    };
+    return `
+      <div class="hero"><div class="eyebrow">${esc(S.org.name)} · ${EMP_STATUS[e.status]}</div><h1>${esc(empName(e))}</h1><p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ") || "Your employee profile."}</p></div>
+      <div class="two" style="align-items:start">
+        <div class="card"><h3>Personal</h3>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}<p class="small muted" style="margin:10px 0 0">Need something corrected? <a href="#" id="askchange">Ask JHM</a>.</p></div>
+        <div class="card"><h3>Contact</h3>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
+        <div class="card"><h3>Employment</h3>${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}</div>
+        <div class="card"><h3>Onboarding <span class="pill ${done === (tasks || []).length ? "ok" : "on"}">${done}/${(tasks || []).length}</span></h3>${(tasks || []).map((t) => `<div class="fld"><span>${esc(t.label)}</span><b class="${["complete", "na"].includes(t.status) ? "ok-text" : ""}">${TASK_STATUS[t.status]}</b></div>`).join("") || `<p class="small muted">No items.</p>`}</div>
+        <div class="card"><div class="card-head"><h3>Emergency contacts</h3><button class="btn sm quiet" id="addcontact">＋ Add</button></div>
+          ${(contacts || []).length ? contacts.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b> ${c.is_primary ? '<span class="pill on">Primary</span>' : ""}<div class="small muted">${[c.relationship, c.phone, c.email].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editcontact="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Add someone we can reach in an emergency.</p>`}</div>
+        <div class="card"><div class="card-head"><h3>Dependents</h3><button class="btn sm quiet" id="adddep">＋ Add</button></div>
+          ${(deps || []).length ? deps.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b><div class="small muted">${[c.relationship, c.date_of_birth ? "DOB " + fmtDate(c.date_of_birth) : ""].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editdep="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">For benefits enrollment.</p>`}</div>
+      </div>`;
+  }
+
+  // ------------------------------------------------------------ ORG CHART + DIRECTORY
+  let dirSearch = "";
+  async function viewOrgChart() {
+    const { data: people, error } = await sb.from("directory").select("*").eq("org_id", S.org.id).order("last_name");
+    if (error) throw error;
+    const P = people || [];
+    const byMgr = {}; P.forEach((p) => { (byMgr[p.manager_id || "root"] = byMgr[p.manager_id || "root"] || []).push(p); });
+    const ids = new Set(P.map((p) => p.id));
+    const roots = P.filter((p) => !p.manager_id || !ids.has(p.manager_id));
+    const name = (p) => `${p.preferred_name || p.first_name} ${p.last_name}`;
+    const canOpen = isStaff();
+    const node = (p, depth = 0) => {
+      const kids = (byMgr[p.id] || []).filter((k) => k.id !== p.id);
+      const card = `<div class="oc-card ${p.user_id === S.session.user.id ? "me" : ""}" ${canOpen ? `onclick="location.hash='#employees/${p.id}'"` : ""}><div class="oc-av">${esc(initials(name(p)))}</div><div><b>${esc(name(p))}</b><div class="small muted">${esc(p.job_title || "—")}${p.department ? " · " + esc(p.department) : ""}</div>${p.work_email ? `<a class="small" href="mailto:${esc(p.work_email)}" onclick="event.stopPropagation()">${esc(p.work_email)}</a>` : ""}</div>${kids.length ? `<span class="pill">${kids.length}</span>` : ""}</div>`;
+      return `<li>${card}${kids.length && depth < 8 ? `<ul>${kids.map((k) => node(k, depth + 1)).join("")}</ul>` : ""}</li>`;
+    };
+    const q = dirSearch.toLowerCase();
+    const list = P.filter((p) => !q || `${name(p)} ${p.first_name} ${p.job_title || ""} ${p.department || ""} ${p.work_email || ""}`.toLowerCase().includes(q));
+    const mgrName = (id) => { const m = P.find((x) => x.id === id); return m ? name(m) : ""; };
+    window.__afterRender = () => {
+      const s = $("#dirsearch"); if (s) { s.oninput = () => { dirSearch = s.value; const rows = $("#dirrows"); rows.innerHTML = dirRows(); }; }
+      const b = $("#addemp"); if (b) b.onclick = () => employeeModal();
+    };
+    const dirRows = () => { const q2 = dirSearch.toLowerCase(); const l = P.filter((p) => !q2 || `${name(p)} ${p.first_name} ${p.job_title || ""} ${p.department || ""} ${p.work_email || ""}`.toLowerCase().includes(q2));
+      return l.length ? l.map((p) => `<tr class="${canOpen ? "clickable" : ""}" ${canOpen ? `onclick="location.hash='#employees/${p.id}'"` : ""}><td><b>${esc(name(p))}</b></td><td>${esc(p.job_title || "—")}</td><td>${esc(p.department || "—")}</td><td>${p.work_email ? `<a href="mailto:${esc(p.work_email)}" onclick="event.stopPropagation()">${esc(p.work_email)}</a>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(mgrName(p.manager_id) || "—")}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`; };
+    return `
+      <div class="page-head"><div><div class="eyebrow">${esc(S.org.name)}</div><h1>Org chart</h1><p>${P.length} people · built from each employee's manager. ${canOpen ? "Set a manager on an employee's profile to place them." : ""}</p></div>${canOpen ? `<button class="btn" id="addemp">＋ Add employee</button>` : ""}</div>
+      ${P.length ? `<div class="card oc-wrap"><ul class="oc">${roots.map((r) => node(r)).join("")}</ul></div>` : `<div class="empty"><h3>No one here yet</h3><p>${canOpen ? "Add employees and set their managers — the chart draws itself." : "Your company hasn't added employees yet."}</p></div>`}
+      <div class="page-head" style="margin-top:28px"><div><h2>Directory</h2></div><input class="search" id="dirsearch" type="text" placeholder="Search name, title, department, email…" value="${esc(dirSearch)}" /></div>
+      <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Work email</th><th>Reports to</th></tr></thead><tbody id="dirrows">${dirRows()}</tbody></table></div>`;
+  }
+
+  // ------------------------------------------------------------ TASKS (all employees)
+  let taskFilter = "open";
+  async function viewTasks() {
+    const { data: tasks, error } = await sb.from("employee_tasks").select("*, completed_by(id,full_name), employees(id,first_name,last_name,preferred_name,status)").eq("org_id", S.org.id).order("due_date", { ascending: true, nullsFirst: false });
+    if (error) throw error;
+    const t0 = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+    const isOpen = (t) => ["pending", "in_progress"].includes(t.status);
+    const groups = { overdue: tasks.filter((t) => isOpen(t) && t.due_date && t.due_date < t0), soon: tasks.filter((t) => isOpen(t) && t.due_date && t.due_date >= t0 && t.due_date <= soon), open: tasks.filter(isOpen), done: tasks.filter((t) => !isOpen(t)), all: tasks };
+    const list = groups[taskFilter] || tasks;
+    window.__afterRender = () => {
+      $("#main").querySelectorAll(".chip").forEach((c) => c.onclick = () => { taskFilter = c.dataset.c; render(); });
+      $("#main").querySelectorAll("[data-task]").forEach((row) => row.onclick = () => { const t = tasks.find((x) => x.id === row.dataset.task); taskModal({ ...t.employees, id: t.employee_id }, t); });
+      $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); openFile(b.dataset.open); });
+    };
+    return `
+      <div class="page-head"><div><div class="eyebrow">${esc(S.org.name)}</div><h1>Tasks</h1><p>Onboarding and compliance items across every employee.</p></div></div>
+      <div class="filters">${[["overdue", "Overdue"], ["soon", "Due this week"], ["open", "All open"], ["done", "Completed"], ["all", "Everything"]].map(([k, v]) => `<button class="chip ${taskFilter === k ? "active" : ""} ${k === "overdue" && groups.overdue.length ? "alert" : ""}" data-c="${k}">${v} (${groups[k].length})</button>`).join("")}</div>
+      ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Task</th><th>Employee</th><th>Due</th><th>File</th><th>Status</th></tr></thead><tbody>
+        ${list.map((t) => { const e = t.employees || {}; const late = isOpen(t) && t.due_date && t.due_date < t0; return `<tr class="clickable" data-task="${t.id}"><td><b>${esc(t.label)}</b>${t.notes ? `<div class="small muted">${esc(t.notes)}</div>` : ""}</td><td><a href="#employees/${t.employee_id}" onclick="event.stopPropagation()">${esc((e.preferred_name || e.first_name || "") + " " + (e.last_name || ""))}</a></td><td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "") + fmtDate(t.due_date) : "—"}</td><td>${t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄</button>` : '<span class="small muted">—</span>'}</td><td><span class="pill ${t.status === "complete" ? "ok" : t.status === "in_progress" ? "on" : t.status === "na" ? "" : "warn"}">${TASK_STATUS[t.status]}</span></td></tr>`; }).join("")}
+      </tbody></table></div>` : `<div class="empty"><h3>Nothing here</h3><p>${taskFilter === "overdue" ? "No overdue tasks — nice." : "No tasks match this filter."}</p></div>`}`;
+  }
+
+  // ------------------------------------------------------------ SETTINGS
+  async function viewSettings() {
     window.__afterRender = () => {
       const f = $("#pf"); f.onsubmit = (e) => { e.preventDefault(); busy(f.querySelector("button"), async () => {
         const { error } = await sb.from("profiles").update({ full_name: f.full_name.value.trim() }).eq("id", S.session.user.id); if (error) throw error;
         S.profile.full_name = f.full_name.value.trim(); toast("Saved"); render(); }); };
       const p = $("#pw"); p.onsubmit = (e) => { e.preventDefault(); busy(p.querySelector("button"), async () => {
+        if (p.password.value.length < 10) throw new Error("Use at least 10 characters.");
         const { error } = await sb.auth.updateUser({ password: p.password.value }); if (error) throw error; p.reset(); toast("Password changed"); }); };
+      const c = $("#cf"); if (c) c.onsubmit = (e) => { e.preventDefault(); busy(c.querySelector("#csave"), async () => {
+        const rec = { name: c.cname.value.trim(), accent: /^#[0-9a-fA-F]{6}$/.test(c.accent.value.trim()) ? c.accent.value.trim() : S.org.accent };
+        if (!rec.name) throw new Error("Company name is required.");
+        const logo = c.logo.files[0];
+        if (logo) { const path = `${S.org.id}/branding/logo-${Date.now()}.${logo.name.split(".").pop()}`; const { error } = await sb.storage.from(BUCKET).upload(path, logo, { contentType: logo.type }); if (error) throw error; rec.logo_path = path; if (S.org.logo_path) await sb.storage.from(BUCKET).remove([S.org.logo_path]); }
+        const { error } = await sb.from("organizations").update(rec).eq("id", S.org.id); if (error) throw error;
+        const keep = S.org.id; await loadContext(); S.org = S.orgs.find((o) => o.id === keep) || S.org; S.role = S.org.role; if (S.org.logo_path) { try { S.logoUrl = await signedUrl(S.org.logo_path, 3600); } catch {} }
+        toast("Company settings saved"); render(); }); };
+      const ac = $("#accent"); const sw = $("#swatch"); if (ac && sw) ac.oninput = () => (sw.style.background = ac.value);
     };
-    return `<div class="page-head"><div><h1>Account</h1></div></div>
-      <div class="two"><div class="card"><h3>Your name</h3><form id="pf"><label>Full name</label><input type="text" name="full_name" value="${esc(S.profile.full_name || "")}" /><label>Email</label><input type="email" value="${esc(S.profile.email)}" disabled /><button class="btn block">Save</button></form></div>
-      <div class="card"><h3>Change password</h3><form id="pw"><label>New password</label><input type="password" name="password" minlength="10" required autocomplete="new-password" /><button class="btn block">Update password</button></form></div></div>`;
+    const company = S.org && isAdmin() ? `<div class="card"><h3>Company</h3><p class="small muted">How ${esc(S.org.name)}'s workspace looks to everyone who signs in.</p>
+        <form id="cf" novalidate><label>Company name</label><input type="text" name="cname" value="${esc(S.org.name)}" />
+          <label>Logo ${S.logoUrl ? `<span class="muted">(current shown below)</span>` : ""}</label>${S.logoUrl ? `<div class="ws-logo" style="max-width:240px;border:1px solid var(--line)"><img src="${S.logoUrl}" alt="" /></div>` : ""}<input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+          <label>Accent color</label><div style="display:flex;gap:10px;align-items:center"><span id="swatch" style="width:34px;height:34px;border-radius:9px;background:${esc(S.org.accent || "#23305a")};border:1px solid var(--line);flex-shrink:0"></span><input type="text" id="accent" name="accent" value="${esc(S.org.accent || "#23305a")}" style="max-width:140px" /></div>
+          <button class="btn block" id="csave">Save company settings</button></form></div>` : "";
+    return `<div class="page-head"><div><div class="eyebrow">${S.org ? esc(S.org.name) : "JHM Consulting"}</div><h1>Settings</h1></div></div>
+      <div class="two" style="align-items:start">${company}
+      <div class="card"><h3>Your profile</h3><form id="pf"><label>Full name</label><input type="text" name="full_name" value="${esc(S.profile.full_name || "")}" /><label>Email</label><input type="email" value="${esc(S.profile.email)}" disabled /><label>Role</label><input type="text" value="${roleLabel(S.role)}${S.org ? " · " + esc(S.org.name) : ""}" disabled /><button class="btn block">Save</button></form></div>
+      <div class="card"><h3>Password</h3><form id="pw"><label>New password <span class="muted">(10+ characters)</span></label><input type="password" name="password" minlength="10" required autocomplete="new-password" /><button class="btn block">Update password</button></form></div>
+      ${isRealSuper() ? `<div class="card"><h3>Portal administration</h3><p class="small muted">Client workspaces, logos, modules and access are managed from the Clients screen.</p><a class="btn quiet" href="#admin">Go to Clients →</a></div>` : ""}</div>
+      <div style="margin-top:18px">${rolesExplainer()}</div>`;
   }
+
+  // ------------------------------------------------------------ GLOBAL SEARCH (⌘K)
+  function commands() {
+    const c = [
+      { t: "Home", k: "dashboard overview", go: () => (location.hash = "#home") },
+      { t: "Documents", k: "files handbook policies library", go: () => (location.hash = "#docs") },
+      { t: "Requests · Ask JHM", k: "help question contact support", go: () => requestModal() },
+      { t: "Settings", k: "profile password account company logo color", go: () => (location.hash = "#settings") },
+    ];
+    const M = mods();
+    if (!isStaff() && M.employees) c.push({ t: "My profile", k: "me record emergency contact dependents", go: () => (location.hash = "#me") });
+    if (isStaff()) {
+      if (M.employees) c.push({ t: "Employees", k: "hris staff people roster", go: () => (location.hash = "#employees") }, { t: "Add employee", k: "new hire onboarding create", go: () => employeeModal() });
+      if (M.hiring) c.push({ t: "Hiring", k: "jobs recruiting candidates positions", go: () => (location.hash = "#hiring") }, { t: "New job order", k: "open position requisition create", go: () => jobModal() });
+      if (M.tasks) c.push({ t: "Tasks", k: "onboarding compliance checklist overdue i-9 w-4", go: () => (location.hash = "#tasks") });
+      if (M.documents) c.push({ t: "Upload document", k: "add file handbook policy benefits", go: () => docModal() });
+    }
+    if (M.employees) c.push({ t: "Org chart & directory", k: "organization team structure who reports manager email", go: () => (location.hash = "#org") });
+    if (isAdmin()) c.push({ t: "People & access", k: "users members roles permissions", go: () => (location.hash = "#people") }, { t: "Invite someone", k: "add user access email", go: () => inviteModal() });
+    if (isRealSuper()) c.push({ t: "All clients", k: "workspaces admin switch", go: () => (location.hash = "#admin") });
+    return c.map((x) => ({ type: "Go to", title: x.t, sub: "", keys: (x.t + " " + x.k).toLowerCase(), go: x.go }));
+  }
+  function openSearch() {
+    if (!S.org) return;
+    const root = $("#modal-root");
+    root.innerHTML = `<div class="modal-bg palette"><div class="pal"><div class="pal-in"><span>⌕</span><input id="palq" type="text" placeholder="Search employees, jobs, candidates, tasks, documents, requests… or type an action" autocomplete="off" /><kbd>esc</kbd></div><div id="palr" class="pal-r"><div class="pal-hint">Start typing. ↑↓ to move, Enter to open.</div></div></div></div>`;
+    const bg = root.querySelector(".modal-bg"), q = $("#palq"), out = $("#palr");
+    const close = () => (root.innerHTML = "");
+    bg.onclick = (e) => { if (e.target === bg) close(); };
+    q.focus();
+    let items = [], sel = 0, seq = 0;
+    const draw = () => {
+      if (!items.length) { out.innerHTML = `<div class="pal-hint">${q.value.trim() ? "No matches." : "Start typing. ↑↓ to move, Enter to open."}</div>`; return; }
+      let html = "", lastType = null;
+      items.forEach((it, i) => { if (it.type !== lastType) { html += `<div class="pal-type">${it.type}</div>`; lastType = it.type; } html += `<div class="pal-it ${i === sel ? "sel" : ""}" data-i="${i}"><div><b>${esc(it.title)}</b>${it.sub ? `<span class="small muted"> · ${esc(it.sub)}</span>` : ""}</div>${it.badge ? `<span class="pill ${it.badgeClass || ""}">${esc(it.badge)}</span>` : ""}</div>`; });
+      out.innerHTML = html;
+      out.querySelectorAll(".pal-it").forEach((el) => { el.onmouseenter = () => { sel = +el.dataset.i; draw(); }; el.onclick = () => pick(); });
+      const s = out.querySelector(".sel"); if (s) s.scrollIntoView({ block: "nearest" });
+    };
+    const pick = () => { const it = items[sel]; if (!it) return; close(); it.go(); };
+    const run = async () => {
+      const term = q.value.trim(); const my = ++seq;
+      const cmds = commands().filter((c) => !term || term.toLowerCase().split(/\s+/).every((w) => c.keys.includes(w)));
+      if (!term) { items = cmds; sel = 0; draw(); return; }
+      const like = `%${term.replace(/[%_]/g, "")}%`; const org = S.org.id;
+      const [emps, jobs, cands, docs, tasks, reqs] = await Promise.all([
+        sb.from("employees").select("id,first_name,last_name,preferred_name,job_title,department,status").eq("org_id", org).or(`first_name.ilike.${like},last_name.ilike.${like},preferred_name.ilike.${like},job_title.ilike.${like},department.ilike.${like},work_email.ilike.${like}`).limit(6),
+        sb.from("job_orders").select("id,title,department,status").eq("org_id", org).or(`title.ilike.${like},department.ilike.${like},location.ilike.${like}`).limit(5),
+        sb.from("candidates").select("id,full_name,stage,job_order_id,job_orders(title)").eq("org_id", org).or(`full_name.ilike.${like},email.ilike.${like}`).limit(5),
+        sb.from("documents").select("id,title,category,file_path").eq("org_id", org).or(`title.ilike.${like},description.ilike.${like}`).limit(6),
+        isStaff() ? sb.from("employee_tasks").select("id,label,status,due_date,employee_id,employees(first_name,last_name)").eq("org_id", org).or(`label.ilike.${like},notes.ilike.${like}`).limit(6) : Promise.resolve({ data: [] }),
+        sb.from("requests").select("id,subject,status").eq("org_id", org).or(`subject.ilike.${like},body.ilike.${like}`).limit(4),
+      ]);
+      if (my !== seq) return;
+      items = [
+        ...(emps.data || []).map((e) => ({ type: "Employees", title: `${e.preferred_name || e.first_name} ${e.last_name}`, sub: [e.job_title, e.department].filter(Boolean).join(" · "), badge: EMP_STATUS[e.status], go: () => (location.hash = "#employees/" + e.id) })),
+        ...(jobs.data || []).map((j) => ({ type: "Job orders", title: j.title, sub: j.department || "", badge: JOB_STATUS[j.status], go: () => (location.hash = "#hiring/" + j.id) })),
+        ...(cands.data || []).map((c) => ({ type: "Candidates", title: c.full_name, sub: c.job_orders?.title || "", badge: STAGE_LABEL[c.stage], go: () => (location.hash = "#hiring/" + c.job_order_id) })),
+        ...(tasks.data || []).map((t) => ({ type: "Tasks", title: t.label, sub: t.employees ? `${t.employees.first_name} ${t.employees.last_name}` : "", badge: TASK_STATUS[t.status], badgeClass: t.status === "complete" ? "ok" : "", go: () => (location.hash = "#employees/" + t.employee_id) })),
+        ...(docs.data || []).map((d) => ({ type: "Documents", title: d.title, sub: CATS[d.category], badge: "Open", go: () => openFile(d.file_path) })),
+        ...(reqs.data || []).map((r) => ({ type: "Requests", title: r.subject, sub: "", badge: REQ_STATUS[r.status], go: () => (location.hash = "#requests") })),
+        ...cmds,
+      ];
+      sel = 0; draw();
+    };
+    let t; q.oninput = () => { clearTimeout(t); t = setTimeout(run, 140); };
+    q.onkeydown = (e) => { if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(sel + 1, items.length - 1); draw(); } else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(sel - 1, 0); draw(); } else if (e.key === "Enter") { e.preventDefault(); pick(); } else if (e.key === "Escape") close(); };
+    run();
+  }
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (S.session && S.org) openSearch(); }
+    if (e.key === "/" && S.session && S.org && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName) && !$("#modal-root").innerHTML) { e.preventDefault(); openSearch(); }
+  });
 
   // ------------------------------------------------------------ boot
   async function boot() {
@@ -960,7 +1226,7 @@
     if (S.recovery) return renderAuth("recovery");
     if (!session) return renderAuth();
     try { await loadContext(); } catch (e) { fail(e); return renderAuth("signin", `<div class="error">Could not load your profile. Try signing in again.</div>`); }
-    if (!location.hash) location.hash = S.org ? "#docs" : (isSuper() ? "#admin" : "#docs");
+    if (!location.hash) location.hash = S.org ? "#home" : (isSuper() ? "#admin" : "#home");
     render();
     if (!S.profile.full_name) setupModal();
   }

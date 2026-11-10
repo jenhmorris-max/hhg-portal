@@ -9,9 +9,12 @@ Secure, multi-client HR document portal for JHM Consulting clients, under The Ho
 
 | Tier | Who | Sees |
 |---|---|---|
-| **JHM admin** (super admin) | You | Every client workspace. Creates clients, uploads, invites. |
-| **Client admin** | The client's owner / manager | Everything in their company: all documents, hiring boards, resumes, notes. Can invite their own staff. |
-| **Client staff** (member) | Their employees | Only documents flagged "visible to client staff" (handbook, benefits handouts). No hiring data. |
+| **JHM admin** (super admin) | You | Every client workspace. Creates clients, switches modules on/off, replies to requests. |
+| **Owner** | The client's owner / administrator | Full workspace: documents, employees, hiring, tasks, org chart. Invites users, company branding. |
+| **Staff** | Chosen staff with HR access | Employees, hiring, tasks, all documents. Cannot manage users or settings. |
+| **Employee** | Everyone else | Self-service: own profile (emergency contacts & dependents editable), org chart/directory, shared documents, Ask JHM. |
+
+**Modules** (per client, set by JHM on the Clients screen): Documents, Employees, Hiring, Tasks, Requests. Off = gone from that client's workspace.
 
 Nobody can see another company's data — the database and the file bucket both check the company on every request.
 
@@ -19,6 +22,10 @@ Nobody can see another company's data — the database and the file bucket both 
 
 - **Documents** — per client, by category (Handbook, Policies, Job descriptions, Benefits, Forms, Hiring process, Other), version label, staff-visible toggle, open/download via short-lived signed links.
 - **Employees (HRIS)** — per-client employee records modeled on Employee Navigator: personal, contact/address, employment & pay, emergency contacts, dependents, employee documents, and an onboarding checklist (job description & guidebook acknowledgments, personal info, emergency contact, EEOC self-ID, W-4, I-9, state new-hire report) with auto due dates and a file slot per item. No SSN field by design — it lives only inside the uploaded W-4/I-9.
+- **Home** — dashboard: needs-attention tasks, open requests, numbers, activity, quick actions. Employees get a self-service home.
+- **Org chart & directory** — drawn from each employee's manager; name, title, department, work email. Visible to all tiers.
+- **Tasks** — every onboarding/compliance task across employees; overdue / due this week filters.
+- **Search (⌘K / Ctrl+K or /)** — employees, jobs, candidates, tasks, documents, requests, and actions.
 - **Hiring** — job orders per client; candidates on a drag-and-drop board (Applied → Screening → Interview → Offer → Hired / Passed), resume upload, notes, attachments (full description, interview guide, scorecard), activity log of who did what. Shared between you and the client admin.
 - **Requests (Ask JHM)** — in-portal contact form; clients file questions, you reply from a cross-client inbox. No email addresses exposed.
 - **People** — members and roles, invite by email, pending invitations.
@@ -30,7 +37,7 @@ Nobody can see another company's data — the database and the file bucket both 
 
 ### 1. Supabase project
 1. supabase.com → **New project**. Name `hhg-portal`, pick a strong database password (save it in your password manager), region **East US**.
-2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql` and `supabase/004_job_files.sql`.
+2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql` and `supabase/005_roles.sql`.
 3. **Authentication → Providers → Email**: leave *Enable email provider* on and *Confirm email* on. Set minimum password length to 10 (Authentication → Policies / Password).
 4. **Authentication → URL Configuration**:
    - Site URL: `https://portal.hopeharvestgroup.com` (or wherever the portal will live; `http://localhost:8080` while testing).
@@ -98,4 +105,5 @@ supabase/
   002_employees.sql  Employees/HRIS tables + onboarding checklist (run after schema.sql)
   003_requests.sql   Ask JHM requests table + navy default accent
   004_job_files.sql  attachments on job orders
+  005_roles.sql      four roles, modules, employee self-service linking, directory view
 ```
