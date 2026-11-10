@@ -273,3 +273,6 @@ select.complete, select.na { color: var(--ok); } select.in_progress { color: var
   .oc, .oc ul { flex-direction: column; align-items: stretch; gap: 8px; } .oc ul { padding-top: 0; padding-left: 22px; border-left: 1px solid var(--line-2); margin-top: 8px; }
   .oc li::before, .oc li::after, .oc li > ul::before { display: none !important; } .oc-card { max-width: none; }
 }
+
+.editlink { background: none; border: 0; padding: 2px 0; color: var(--brass-ink); font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; border-bottom: 1px solid transparent; }
+.editlink:hover { border-bottom-color: var(--brass); }

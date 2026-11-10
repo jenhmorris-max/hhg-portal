@@ -607,21 +607,21 @@
 
   const SEL = (name, opts, val, blank = "—") => `<select name="${name}"><option value="">${blank}</option>${opts.map((o) => `<option ${val === o ? "selected" : ""}>${o}</option>`).join("")}</select>`;
   const INP = (label, name, val, type = "text", ph = "") => `<div><label>${label}</label><input type="${type}" name="${name}" value="${esc(val ?? "")}" placeholder="${esc(ph)}" /></div>`;
-  async function employeeModal(e = null) {
+  async function employeeModal(e = null, focus = null) {
     const { data: others } = await sb.from("employees").select("id,first_name,last_name").eq("org_id", S.org.id).neq("status", "terminated").order("last_name");
     const m = modal(`
       <div class="modal-head"><h3>${e ? "Edit employee" : "Add employee"}</h3><button class="x" data-close>×</button></div>
       <form id="f" novalidate>
-        <h4 class="sec">Personal</h4>
+        <h4 class="sec" id="sec-personal">Personal</h4>
         <div class="three">${INP("First name *", "first_name", e?.first_name)}${INP("Middle", "middle_name", e?.middle_name)}${INP("Last name *", "last_name", e?.last_name)}</div>
         <div class="three">${INP("Preferred name", "preferred_name", e?.preferred_name)}${INP("Date of birth", "date_of_birth", e?.date_of_birth, "date")}<div><label>Marital status</label>${SEL("marital_status", ["Single", "Married", "Domestic partner", "Divorced", "Widowed"], e?.marital_status)}</div></div>
         <div class="three"><div><label>Gender</label>${SEL("gender", ["Female", "Male", "Non-binary", "Prefer not to say"], e?.gender)}</div></div>
-        <h4 class="sec">Contact</h4><p class="small muted" style="margin:4px 0 0">If an email here matches a portal user invited as <b>Employee</b>, their self-service profile links automatically.</p>
+        <h4 class="sec" id="sec-contact">Contact</h4><p class="small muted" style="margin:4px 0 0">If an email here matches a portal user invited as <b>Employee</b>, their self-service profile links automatically.</p>
         <div class="two">${INP("Personal email", "personal_email", e?.personal_email, "email")}${INP("Work email", "work_email", e?.work_email, "email")}</div>
         <div class="two">${INP("Mobile phone", "mobile_phone", e?.mobile_phone, "tel")}${INP("Home phone", "home_phone", e?.home_phone, "tel")}</div>
         <div class="two">${INP("Address", "address1", e?.address1)}${INP("Apt / Suite", "address2", e?.address2)}</div>
         <div class="three">${INP("City", "city", e?.city)}${INP("State", "state", e?.state ?? "FL")}${INP("ZIP", "zip", e?.zip)}</div>
-        <h4 class="sec">Employment</h4>
+        <h4 class="sec" id="sec-employment">Employment</h4>
         <div class="three">${INP("Hire date", "hire_date", e?.hire_date, "date")}${INP("Start date", "start_date", e?.start_date, "date")}<div><label>Status</label><select name="status">${Object.entries(EMP_STATUS).map(([k, v]) => `<option value="${k}" ${(e?.status || "onboarding") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
         <div class="three">${INP("Job title", "job_title", e?.job_title)}${INP("Department", "department", e?.department)}${INP("Work location", "work_location", e?.work_location)}</div>
         <div class="three"><div><label>Employee type</label>${SEL("employee_type", ["Full-time", "Part-time", "Temporary", "Seasonal", "Intern", "Contractor"], e?.employee_type)}</div>
@@ -634,6 +634,7 @@
         <div class="modal-foot">${e ? `<button type="button" class="btn danger" id="del">Delete record</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${e ? "Save" : "Add employee"}</button></div>
       </form>`, { wide: true });
     const f = m.el.querySelector("#f");
+    if (focus) { const sec = m.el.querySelector("#sec-" + focus); if (sec) { setTimeout(() => { sec.scrollIntoView({ block: "start", behavior: "smooth" }); const inp = sec.nextElementSibling?.querySelector("input,select"); if (inp) inp.focus({ preventScroll: true }); }, 60); } }
     f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
       const d = Object.fromEntries(new FormData(f));
       if (!d.first_name.trim() || !d.last_name.trim()) throw new Error("First and last name are required.");
@@ -673,6 +674,20 @@
     const money = (n) => n == null ? "" : "$" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2 });
     window.__afterRender = () => {
       $("#editemp").onclick = () => employeeModal(e);
+      $("#main").querySelectorAll("[data-editsec]").forEach((b) => b.onclick = () => employeeModal(e, b.dataset.editsec));
+      const all = $("#allcomplete"); if (all) all.onclick = async () => {
+        const open = tasks.filter((t) => !["complete", "na"].includes(t.status));
+        if (!open.length) return;
+        if (!(await confirmBox("Mark all onboarding tasks complete?", `${open.length} open item${open.length > 1 ? "s" : ""} for ${empName(e)} will be marked complete and stamped with your name and today's date.`, "Mark all complete"))) return;
+        try {
+          const { error } = await sb.from("employee_tasks").update({ status: "complete", completed_at: new Date().toISOString(), completed_by: S.session.user.id }).in("id", open.map((t) => t.id)); if (error) throw error;
+          await log("employee", e.id, "task_complete", { name: empName(e), task: `all ${open.length} onboarding tasks` }); toast("All tasks marked complete"); render();
+        } catch (err) { fail(err); }
+      };
+      const reopen = $("#reopenall"); if (reopen) reopen.onclick = async () => {
+        if (!(await confirmBox("Reopen all tasks?", `Every onboarding item for ${empName(e)} goes back to Pending (files are kept).`, "Reopen all"))) return;
+        try { const { error } = await sb.from("employee_tasks").update({ status: "pending", completed_at: null, completed_by: null }).eq("employee_id", e.id); if (error) throw error; render(); } catch (err) { fail(err); }
+      };
       $("#addcontact").onclick = () => contactModal(e);
       $("#adddep").onclick = () => dependentModal(e);
       $("#addfile").onclick = () => empFileModal(e);
@@ -698,7 +713,8 @@
         <p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ")} <span class="pill ${e.status === "active" ? "on" : e.status === "onboarding" ? "warn" : ""}">${EMP_STATUS[e.status]}</span></p></div>
         <button class="btn quiet" id="editemp">Edit profile</button></div>
 
-      <div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3>Onboarding & compliance <span class="pill ${done === tasks.length ? "on" : ""}">${done}/${tasks.length}</span></h3><button class="btn sm quiet" id="addtask">＋ Add task</button></div>
+      <div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3>Onboarding & compliance <span class="pill ${done === tasks.length ? "ok" : "on"}">${done}/${tasks.length}</span></h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${done < tasks.length ? `<button class="btn sm ghost" id="allcomplete">✓ Mark all complete</button>` : `<button class="btn sm quiet" id="reopenall">Reopen all</button>`}<button class="btn sm quiet" id="addtask">＋ Add task</button></div></div>
         <table style="margin-top:8px"><tbody>${tasks.map((t) => { const late = t.due_date && t.due_date < today && !["complete", "na"].includes(t.status);
           return `<tr class="clickable" data-task="${t.id}"><td style="width:46%"><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.notes ? `<div class="small">${esc(t.notes)}</div>` : ""}</td>
             <td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "Due ") + fmtDate(t.due_date) : ""}</td>
@@ -708,9 +724,9 @@
         <p class="small muted" style="margin:10px 0 0">Click a task to upload the completed form or add a note. W-4 and I-9 files are admin-only and never visible to staff.</p></div>
 
       <div class="two">
-        <div class="card"><h3>Personal</h3>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}${field("Gender", e.gender)}${field("Marital status", e.marital_status)}</div>
-        <div class="card"><h3>Contact</h3>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Home phone", e.home_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
-        <div class="card"><h3>Employment</h3>${field("Hire date", fmtDate(e.hire_date))}${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("FLSA class", e.flsa_class)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Pay", e.pay_type ? `${e.pay_type}${e.pay_rate != null ? " · " + money(e.pay_rate) + (e.pay_type === "Hourly" ? "/hr" : "/yr") : ""}${e.pay_frequency ? " · " + e.pay_frequency : ""}` : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}${e.status === "terminated" ? field("Terminated", fmtDate(e.termination_date) + (e.termination_reason ? " · " + e.termination_reason : "")) : ""}</div>
+        <div class="card"><div class="card-head"><h3>Personal</h3><button class="editlink" data-editsec="personal">Edit</button></div>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}${field("Gender", e.gender)}${field("Marital status", e.marital_status)}</div>
+        <div class="card"><div class="card-head"><h3>Contact</h3><button class="editlink" data-editsec="contact">Edit</button></div>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Home phone", e.home_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
+        <div class="card"><div class="card-head"><h3>Employment</h3><button class="editlink" data-editsec="employment">Edit</button></div>${field("Hire date", fmtDate(e.hire_date))}${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("FLSA class", e.flsa_class)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Pay", e.pay_type ? `${e.pay_type}${e.pay_rate != null ? " · " + money(e.pay_rate) + (e.pay_type === "Hourly" ? "/hr" : "/yr") : ""}${e.pay_frequency ? " · " + e.pay_frequency : ""}` : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}${e.status === "terminated" ? field("Terminated", fmtDate(e.termination_date) + (e.termination_reason ? " · " + e.termination_reason : "")) : ""}</div>
         <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Emergency contacts</h3><button class="btn sm quiet" id="addcontact">＋ Add</button></div>
           ${contacts.length ? contacts.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b> ${c.is_primary ? '<span class="pill on">Primary</span>' : ""}<div class="small muted">${[c.relationship, c.phone, c.alt_phone, c.email].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editcontact="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">None on file.</p>`}</div>
         <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Dependents</h3><button class="btn sm quiet" id="adddep">＋ Add</button></div>
