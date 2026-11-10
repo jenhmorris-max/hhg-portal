@@ -97,6 +97,7 @@
     if (error) throw error; return data.signedUrl;
   }
   async function openFile(path, download = false) {
+    if (!path) { toast("This document is written in the portal — open it from Documents.", true); return; }
     try {
       const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 120, download ? { download: true } : undefined);
       if (error) throw error;
@@ -286,6 +287,7 @@
       else if (route === "tasks" && isStaff() && M.tasks) html = await viewTasks();
       else if (route === "settings") html = await viewSettings(arg, arg2);
       else if (route === "home") html = await viewHome();
+      else if (route === "docs" && arg && M.documents) html = await viewTextDoc(arg);
       else if (M.documents || !S.org) html = await viewDocs();
       else html = await viewHome();
     } catch (e) { fail(e); html = `<div class="empty"><h3>This page couldn't load</h3><p class="small">${esc(e?.message || e)}</p></div>`; }
@@ -307,16 +309,17 @@
       const s = $("#docsearch"); if (s) { s.oninput = () => { docSearch = s.value; renderDocList(docs); }; }
       wireDocRows();
       const up = $("#upload"); if (up) up.onclick = () => docModal();
+      const nt = $("#newtext"); if (nt) nt.onclick = () => textDocEditor();
     };
     function wireDocRows() {
       $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => { openFile(b.dataset.open); log("document", b.dataset.id, "viewed"); });
       $("#main").querySelectorAll("[data-dl]").forEach((b) => b.onclick = () => openFile(b.dataset.dl, true));
-      $("#main").querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => docModal(docs.find((d) => d.id === b.dataset.edit)));
+      $("#main").querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => { const d = docs.find((x) => x.id === b.dataset.edit); d.body_html ? textDocEditor(d) : docModal(d); });
       $("#main").querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
         const d = docs.find((x) => x.id === b.dataset.del);
         if (!(await confirmBox("Delete document?", `"${d.title}" will be removed for everyone in ${S.org.name}.`))) return;
         try {
-          await sb.storage.from(BUCKET).remove([d.file_path]);
+          if (d.file_path) await sb.storage.from(BUCKET).remove([d.file_path]);
           const { error } = await sb.from("documents").delete().eq("id", d.id); if (error) throw error;
           await log("document", d.id, "deleted", { title: d.title }); toast("Deleted"); render();
         } catch (e) { fail(e); }
@@ -327,18 +330,18 @@
       $("#doclist").innerHTML = docRows(list); wireDocRows();
     }
     const docRows = (list) => list.length ? list.map((d) => `
-      <div class="row"><div class="icon">${esc(ext(d.file_name))}</div>
+      <div class="row"><div class="icon">${d.body_html ? "DOC" : esc(ext(d.file_name || ""))}</div>
         <div class="grow"><div class="title">${esc(d.title)}</div>
           <div class="meta"><span>${CATS[d.category]}</span>${d.version_label ? `<span>${esc(d.version_label)}</span>` : ""}<span>Updated ${fmtDate(d.updated_at)}</span><span>${fmtSize(d.size_bytes)}</span>
           ${isStaff() ? `<span class="pill ${d.staff_visible ? "on" : ""}">${d.staff_visible ? "Shared with employees" : "HR only"}</span>` : ""}</div>
           ${d.description ? `<div class="small muted">${esc(d.description)}</div>` : ""}</div>
-        <div class="actions"><button class="btn sm ghost" data-open="${d.file_path}" data-id="${d.id}">Open</button><button class="btn sm quiet" data-dl="${d.file_path}">Download</button>
+        <div class="actions">${d.body_html ? `<a class="btn sm ghost" href="#docs/${d.id}">Open</a>` : `<button class="btn sm ghost" data-open="${d.file_path}" data-id="${d.id}">Open</button><button class="btn sm quiet" data-dl="${d.file_path}">Download</button>`}
           ${isStaff() ? `<button class="btn sm quiet" data-edit="${d.id}">Edit</button><button class="btn sm danger" data-del="${d.id}">Delete</button>` : ""}</div></div>`).join("")
       : `<div class="empty"><h3>No documents here yet</h3><p>${isStaff() ? "Upload a handbook, policy, job description or benefits handout to get started." : "Your HR consultant hasn't shared anything in this category yet."}</p></div>`;
 
     return `
       <div class="page-head"><div><h1>Documents</h1><p>${isStaff() ? "Handbook, policies, forms and benefits — shared with the team or kept HR-only." : "Your company's HR documents, shared by JHM Consulting."}</p></div>
-        ${isStaff() ? `<button class="btn" id="upload">＋ Upload document</button>` : ""}</div>
+        ${isStaff() ? `<div style="display:flex;gap:8px"><button class="btn quiet" id="newtext">✎ New document</button><button class="btn" id="upload">↑ Upload file</button></div>` : ""}</div>
       <div class="filters"><button class="chip ${docFilter === "all" ? "active" : ""}" data-c="all">All (${docs.length})</button>
         ${Object.keys(CATS).filter((c) => counts[c]).map((c) => `<button class="chip ${docFilter === c ? "active" : ""}" data-c="${c}">${CATS[c]} (${counts[c]})</button>`).join("")}</div>
       <div class="filters"><input class="search" id="docsearch" type="text" placeholder="Search documents…" value="${esc(docSearch)}" /></div>
@@ -375,6 +378,58 @@
       }
       m.close(); toast(doc ? "Saved" : "Uploaded"); render();
     }); };
+  }
+
+  // ------------------------------------------------------------ TEXT DOCUMENTS (written / pasted in the portal)
+  const ALLOWED_TAGS = new Set(["P","BR","B","STRONG","I","EM","U","S","H1","H2","H3","H4","UL","OL","LI","BLOCKQUOTE","A","TABLE","THEAD","TBODY","TR","TH","TD","HR","DIV","SPAN","SUP","SUB"]);
+  function sanitizeHtml(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const walk = (node) => {
+      [...node.childNodes].forEach((ch) => {
+        if (ch.nodeType === 8) { ch.remove(); return; }
+        if (ch.nodeType !== 1) return;
+        if (["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "META", "LINK", "IMG", "SVG", "FORM", "INPUT", "BUTTON"].includes(ch.tagName)) { ch.remove(); return; }
+        walk(ch);
+        if (!ALLOWED_TAGS.has(ch.tagName)) { ch.replaceWith(...ch.childNodes); return; }
+        [...ch.attributes].forEach((at) => { if (!(ch.tagName === "A" && at.name === "href" && /^(https?:|mailto:)/i.test(at.value))) ch.removeAttribute(at.name); });
+        if (ch.tagName === "A") { ch.setAttribute("target", "_blank"); ch.setAttribute("rel", "noopener"); }
+        if ((ch.tagName === "SPAN" || ch.tagName === "DIV") && !ch.textContent.trim()) ch.remove();
+      });
+    };
+    walk(doc.body);
+    return doc.body.innerHTML.replace(/(<br>\s*){3,}/g, "<br><br>").trim();
+  }
+  function textDocEditor(doc = null) {
+    const m = modal(`<div class="modal-head"><h3>${doc ? "Edit document" : "New document"}</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate>
+        <div class="two"><div><label>Title *</label><input type="text" name="title" value="${esc(doc?.title || "")}" placeholder="e.g. Remote Work Policy" /></div><div><label>Category</label><select name="category">${Object.entries(CATS).map(([k, v]) => `<option value="${k}" ${doc?.category === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
+        <div class="two"><div><label>Version label</label><input type="text" name="version_label" value="${esc(doc?.version_label || "")}" placeholder="v1 — Nov 2026" /></div><div><label>Description <span class="muted">(optional)</span></label><input type="text" name="description" value="${esc(doc?.description || "")}" /></div></div>
+        <label>Content <span class="muted">— paste from Word, Google Docs or email; formatting is kept</span></label>
+        <div class="toolbar">${[["bold","B","Bold"],["italic","I","Italic"],["underline","U","Underline"],["formatBlock:h2","H2","Heading"],["formatBlock:h3","H3","Subheading"],["formatBlock:p","¶","Paragraph"],["insertUnorderedList","•","Bulleted list"],["insertOrderedList","1.","Numbered list"],["insertHorizontalRule","—","Divider"]].map(([c, l, ti]) => `<button type="button" data-cmd="${c}" title="${ti}">${l}</button>`).join("")}</div>
+        <div id="editor" class="editor" contenteditable="true">${doc?.body_html || ""}</div>
+        <label class="check"><input type="checkbox" name="staff_visible" ${doc?.staff_visible ? "checked" : ""} /> Share with employees (self-service) — leave off for HR-only items</label>
+        <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${doc ? "Save changes" : "Save to Documents"}</button></div></form>`, { wide: true });
+    const ed = m.el.querySelector("#editor");
+    m.el.querySelectorAll("[data-cmd]").forEach((b) => b.onclick = () => { ed.focus(); const [c, v] = b.dataset.cmd.split(":"); document.execCommand(c, false, v ? "<" + v + ">" : null); });
+    ed.addEventListener("paste", (ev) => { ev.preventDefault(); const html = ev.clipboardData.getData("text/html"); const txt = ev.clipboardData.getData("text/plain"); const clean = html ? sanitizeHtml(html) : esc(txt).replace(/\n{2,}/g, "</p><p>").replace(/\n/g, "<br>"); document.execCommand("insertHTML", false, html ? clean : "<p>" + clean + "</p>"); });
+    if (!doc) setTimeout(() => ed.focus(), 50);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f)); const body = sanitizeHtml(ed.innerHTML);
+      if (!d.title.trim()) throw new Error("Give the document a title."); if (!ed.textContent.trim()) throw new Error("The document is empty.");
+      const rec = { title: d.title.trim(), category: d.category, version_label: d.version_label.trim() || null, description: d.description.trim() || null, staff_visible: !!d.staff_visible, body_html: body, file_name: d.title.trim() + ".html", mime_type: "text/html", size_bytes: body.length };
+      if (doc) { const { error } = await sb.from("documents").update(rec).eq("id", doc.id); if (error) throw error; await log("document", doc.id, "updated", { title: rec.title }); m.close(); toast("Saved"); render(); }
+      else { const { data, error } = await sb.from("documents").insert({ ...rec, org_id: S.org.id, uploaded_by: S.session.user.id }).select().single(); if (error) throw error; await log("document", data.id, "created", { title: rec.title }); m.close(); toast("Saved to Documents"); location.hash = "#docs/" + data.id; }
+    }); };
+  }
+  async function viewTextDoc(id) {
+    const { data: d, error } = await sb.from("documents").select("*").eq("id", id).single();
+    if (error || !d) return `<div class="empty"><h3>Document not found</h3><p>It may have been removed, or you don't have access.</p></div>`;
+    if (!d.body_html) { openFile(d.file_path); return `<div class="empty"><a href="#docs">← Documents</a></div>`; }
+    window.__afterRender = () => { $("#print").onclick = () => window.print(); const e = $("#editdoc"); if (e) e.onclick = () => textDocEditor(d); log("document", d.id, "viewed"); };
+    return `<div class="page-head no-print"><div><a href="#docs" class="small">← Documents</a><h1>${esc(d.title)}</h1><p>${CATS[d.category]}${d.version_label ? " · " + esc(d.version_label) : ""} · Updated ${fmtDate(d.updated_at)}${d.description ? " · " + esc(d.description) : ""}</p></div>
+        <div style="display:flex;gap:8px">${isStaff() ? `<button class="btn quiet" id="editdoc">Edit</button>` : ""}<button class="btn" id="print">Print / Save as PDF</button></div></div>
+      <article class="paper"><header class="paper-head"><div>${esc(S.org.name)}</div><div class="small muted">${esc(d.title)}${d.version_label ? " · " + esc(d.version_label) : ""}</div></header><div class="prose">${d.body_html}</div></article>`;
   }
 
   // ------------------------------------------------------------ HIRING
@@ -743,7 +798,7 @@
         const taskRow = (t) => { const late = t.due_date && t.due_date < today && !["complete", "na"].includes(t.status);
           return `<tr class="clickable" data-task="${t.id}"><td style="width:44%"><b>${esc(t.label)}</b> <span class="pill">${STEP_TYPES[t.step_type] ? STEP_TYPES[t.step_type].split(" ")[0] : ""}${t.assignee && t.assignee !== "hr" ? " · " + ASSIGNEES[t.assignee] : ""}</span>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.notes ? `<div class="small">${esc(t.notes)}</div>` : ""}</td>
             <td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "Due ") + fmtDate(t.due_date) : ""}</td>
-            <td>${t.signed_file_path ? `<button class="btn sm ghost" data-open="${t.signed_file_path}">✍ Signed copy</button>` : t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 ${esc(t.template_doc.title)}</button>${t.requires_signature ? ` <button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : ""}` : t.form_data ? `<span class="pill ok">Form filled</span>` : `<span class="small muted">—</span>`}</td>
+            <td>${t.signed_file_path ? `<button class="btn sm ghost" data-open="${t.signed_file_path}">✍ Signed copy</button>` : t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : t.template_doc ? `${t.template_doc.file_path ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 ${esc(t.template_doc.title)}</button>` : `<a class="btn sm quiet" href="#docs/${t.template_doc.id}" onclick="event.stopPropagation()">📄 ${esc(t.template_doc.title)}</a>`}${t.requires_signature ? ` <button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : ""}` : t.form_data ? `<span class="pill ok">Form filled</span>` : `<span class="small muted">—</span>`}</td>
             <td style="text-align:right"><select data-tstatus="${t.id}" class="${t.status}" style="width:auto;padding:5px 8px">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${v}</option>`).join("")}</select>
               ${t.completed_at ? `<div class="small muted">${esc(t.completed_by?.full_name || "")} · ${fmtDate(t.completed_at)}</div>` : ""}</td></tr>`; };
         const cards = Object.entries(runs).map(([k, list]) => { const meta = runMeta(k); const d = list.filter((t) => ["complete", "na"].includes(t.status)).length;
@@ -779,7 +834,7 @@
         <div class="modal-foot">${t && t.task_key === "custom" ? `<button type="button" class="btn danger" id="del">Delete</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Save</button></div>
       </form>`);
     const f = m.el.querySelector("#f");
-    const ot = m.el.querySelector("#opentpl"); if (ot) ot.onclick = () => openFile(t.template_doc.file_path);
+    const ot = m.el.querySelector("#opentpl"); if (ot) ot.onclick = () => t.template_doc.file_path ? openFile(t.template_doc.file_path) : (m.close(), location.hash = "#docs/" + t.template_doc.id);
     const osg = m.el.querySelector("#opensigned"); if (osg) osg.onclick = () => openFile(t.signed_file_path);
     const sn = m.el.querySelector("#signnow"); if (sn) sn.onclick = () => { m.close(); signModal(e, t); };
     f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
@@ -1035,7 +1090,7 @@
       window.__afterRender = () => { $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openFile(b.dataset.open)); const a = $("#ask"); if (a) a.onclick = () => requestModal(); const a2 = $("#ask2"); if (a2) a2.onclick = () => requestModal(); };
       return `<div class="hero"><h1>${greet}${first ? ", " + esc(first) : ""}.</h1><p>Your profile, your company's HR documents, and a direct line to your HR consultant.</p></div>
         ${mods().employees ? `<div class="quick"><a class="btn sm" href="#me">My profile</a><a class="btn sm quiet" href="#docs">Documents</a><button class="btn sm quiet" id="ask2">Ask JHM</button></div>` : ""}
-        <div class="two"><div class="card"><h3>Recent documents</h3>${(docs || []).length ? docs.map((d) => `<div class="sub-row"><div><b>${esc(d.title)}</b><div class="small muted">${CATS[d.category]} · ${fmtDate(d.updated_at)}</div></div><button class="btn sm ghost" data-open="${d.file_path}">Open</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Nothing shared yet.</p>`}<a href="#docs" class="small" style="display:inline-block;margin-top:10px">All documents →</a></div>
+        <div class="two"><div class="card"><h3>Recent documents</h3>${(docs || []).length ? docs.map((d) => `<div class="sub-row"><div><b>${esc(d.title)}</b><div class="small muted">${CATS[d.category]} · ${fmtDate(d.updated_at)}</div></div>${d.file_path ? `<button class="btn sm ghost" data-open="${d.file_path}">Open</button>` : `<a class="btn sm ghost" href="#docs/${d.id}">Open</a>`}</div>`).join("") : `<p class="small muted" style="margin-top:8px">Nothing shared yet.</p>`}<a href="#docs" class="small" style="display:inline-block;margin-top:10px">All documents →</a></div>
         <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Your requests</h3><button class="btn sm" id="ask">Ask JHM</button></div>${(reqs || []).length ? reqs.map((r) => `<div class="sub-row"><div><b>${esc(r.subject)}</b><div class="small muted">${fmtDate(r.created_at)}</div></div><span class="pill ${r.status === "resolved" ? "" : "on"}">${REQ_STATUS[r.status]}</span></div>`).join("") : `<p class="small muted" style="margin-top:8px">No questions yet.</p>`}</div></div>`;
     }
     const [{ data: emps }, { data: jobs }, { data: tasks }, { data: reqs }, { data: acts }, { data: docs }] = await Promise.all([
@@ -1110,7 +1165,7 @@
         <div class="card"><h3>Employment</h3>${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}</div>
         <div class="card" style="grid-column:1/-1"><h3>Your tasks <span class="pill ${done === (tasks || []).length ? "ok" : "on"}">${done}/${(tasks || []).length}</span></h3>
           ${(tasks || []).map((t) => { const d = ["complete", "na"].includes(t.status); return `<div class="sub-row"><div><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.signed_at ? `<div class="small ok-text">Signed ${fmtDT(t.signed_at)}</div>` : ""}</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${t.signed_file_path ? `<button class="btn sm quiet" data-open="${t.signed_file_path}">Signed copy</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 Review</button>` : ""}
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${t.signed_file_path ? `<button class="btn sm quiet" data-open="${t.signed_file_path}">Signed copy</button>` : t.template_doc ? `${t.template_doc.file_path ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 Review</button>` : `<a class="btn sm quiet" href="#docs/${t.template_doc.id}">📄 Review</a>`}` : ""}
               ${d ? `<span class="pill ok">${TASK_STATUS[t.status]}</span>` : t.assignee === "employee" ? (t.requires_signature && t.template_doc && t.step_type !== "form" ? `<button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : `<button class="btn sm" data-selftask="${t.id}">${t.step_type === "form" ? "Fill in" : t.step_type === "upload" ? "Upload" : t.step_type === "review" ? "Mark reviewed" : "Complete"}</button>`) : `<span class="pill ${t.status === "in_progress" ? "on" : ""}">${t.assignee === "manager" ? "With your manager" : "With HR"}</span>`}</div></div>`; }).join("") || `<p class="small muted">No items.</p>`}</div>
         <div class="card"><div class="card-head"><h3>Emergency contacts</h3><button class="btn sm quiet" id="addcontact">＋ Add</button></div>
           ${(contacts || []).length ? contacts.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b> ${c.is_primary ? '<span class="pill on">Primary</span>' : ""}<div class="small muted">${[c.relationship, c.phone, c.email].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editcontact="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Add someone we can reach in an emergency.</p>`}</div>
@@ -1209,7 +1264,7 @@
       <div class="padwrap"><canvas id="pad" width="760" height="220"></canvas><button type="button" class="btn sm quiet" id="clear">Clear</button></div>
       <label class="check"><input type="checkbox" id="consent" /> I have reviewed <b>${esc(t.template_doc.title)}</b> and agree to sign it electronically. I understand this signature is legally binding, the same as a handwritten one.</label>
       <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="dosign">Sign and file</button></div>`, { wide: true });
-    m.el.querySelector("#review").onclick = () => openFile(t.template_doc.file_path);
+    m.el.querySelector("#review").onclick = () => t.template_doc.file_path ? openFile(t.template_doc.file_path) : window.open(location.origin + location.pathname + "#docs/" + t.template_doc.id, "_blank");
     const cv = m.el.querySelector("#pad"), ctx = cv.getContext("2d"); let drawing = false, has = false, last = null;
     ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#17191f";
     const pos = (ev) => { const r = cv.getBoundingClientRect(); const p = ev.touches ? ev.touches[0] : ev; return [(p.clientX - r.left) * cv.width / r.width, (p.clientY - r.top) * cv.height / r.height]; };
@@ -1486,7 +1541,7 @@
         M.employees ? sb.from(isStaff() ? "employees" : "directory").select("id,first_name,last_name,preferred_name,job_title,department,status").eq("org_id", org).or(`first_name.ilike.${like},last_name.ilike.${like},preferred_name.ilike.${like},job_title.ilike.${like},department.ilike.${like},work_email.ilike.${like}`).limit(6) : none,
         isStaff() && M.hiring ? sb.from("job_orders").select("id,title,department,status").eq("org_id", org).or(`title.ilike.${like},department.ilike.${like},location.ilike.${like}`).limit(5) : none,
         isStaff() && M.hiring ? sb.from("candidates").select("id,full_name,stage,job_order_id,job_orders(title)").eq("org_id", org).or(`full_name.ilike.${like},email.ilike.${like}`).limit(5) : none,
-        sb.from("documents").select("id,title,category,file_path").eq("org_id", org).or(`title.ilike.${like},description.ilike.${like}`).limit(6),
+        sb.from("documents").select("id,title,category,file_path").eq("org_id", org).or(`title.ilike.${like},description.ilike.${like},body_html.ilike.${like}`).limit(6),
         isStaff() ? sb.from("employee_tasks").select("id,label,status,due_date,employee_id,employees(first_name,last_name)").eq("org_id", org).or(`label.ilike.${like},notes.ilike.${like}`).limit(6) : Promise.resolve({ data: [] }),
         sb.from("requests").select("id,subject,status").eq("org_id", org).or(`subject.ilike.${like},body.ilike.${like}`).limit(4),
       ]);
@@ -1496,7 +1551,7 @@
         ...(jobs.data || []).map((j) => ({ type: "Job orders", title: j.title, sub: j.department || "", badge: JOB_STATUS[j.status], go: () => (location.hash = "#hiring/" + j.id) })),
         ...(cands.data || []).map((c) => ({ type: "Candidates", title: c.full_name, sub: c.job_orders?.title || "", badge: STAGE_LABEL[c.stage], go: () => (location.hash = "#hiring/" + c.job_order_id) })),
         ...(tasks.data || []).map((t) => ({ type: "Tasks", title: t.label, sub: t.employees ? `${t.employees.first_name} ${t.employees.last_name}` : "", badge: TASK_STATUS[t.status], badgeClass: t.status === "complete" ? "ok" : "", go: () => (location.hash = "#employees/" + t.employee_id) })),
-        ...(docs.data || []).map((d) => ({ type: "Documents", title: d.title, sub: CATS[d.category], badge: "Open", go: () => openFile(d.file_path) })),
+        ...(docs.data || []).map((d) => ({ type: "Documents", title: d.title, sub: CATS[d.category], badge: "Open", go: () => d.file_path ? openFile(d.file_path) : (location.hash = "#docs/" + d.id) })),
         ...(reqs.data || []).map((r) => ({ type: "Requests", title: r.subject, sub: "", badge: REQ_STATUS[r.status], go: () => (location.hash = "#requests") })),
         ...cmds,
       ];
