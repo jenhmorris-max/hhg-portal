@@ -844,7 +844,7 @@
   }
 
   // ------------------------------------------------------------ PEOPLE (members & invites)
-  async function viewPeople() {
+  async function viewPeople(embedded = false) {
     const [{ data: mems, error }, { data: invs }] = await Promise.all([
       sb.from("memberships").select("*, profile:user_id(full_name,email)").eq("org_id", S.org.id).order("created_at"),
       sb.from("invites").select("*").eq("org_id", S.org.id).is("accepted_at", null).order("created_at"),
@@ -869,7 +869,7 @@
     };
     const me = S.session.user.id;
     return `
-      <div class="page-head"><div><h1>People</h1><p>Who can sign in, and what they can see.</p></div><button class="btn" id="invite">＋ Invite someone</button></div>
+      <div class="${embedded ? "card-head" : "page-head"}" style="${embedded ? "margin-bottom:12px" : ""}"><div>${embedded ? `<h3>People & access</h3>` : `<h1>People</h1>`}<p class="small muted" style="margin:${embedded ? "2px 0 0" : ""}">Who can sign in, and what they can see.</p></div><button class="btn" id="invite">＋ Invite someone</button></div>
       <div class="card" style="margin-bottom:14px"><table><thead><tr><th>Name</th><th>Email</th><th>Access</th><th></th></tr></thead><tbody>
         ${mems.map((m) => `<tr><td><b>${esc(m.profile?.full_name || "—")}</b>${m.user_id === me ? ' <span class="pill">you</span>' : ""}</td><td class="muted">${esc(m.profile?.email || "")}</td>
           <td>${m.user_id === me && !isSuper() ? `<span class="pill on">Owner</span>` : `<select data-role="${m.id}" style="width:auto;padding:5px 8px">${["owner", "staff", "employee"].map((r) => `<option value="${r}" ${(m.role === r || (r === "owner" && m.role === "admin") || (r === "employee" && m.role === "member")) ? "selected" : ""}>${ROLE[r].label}</option>`).join("")}</select>`}</td>
@@ -1322,7 +1322,7 @@
     }
     if (cur === "workflow") { body = await wfEditor(arg2); hook = window.__wfHook || (() => {}); window.__wfHook = null; }
 
-    if (cur === "access") { location.hash = "#people"; return ""; }
+    if (cur === "access") { body = await viewPeople(true); hook = window.__afterRender || (() => {}); }
 
     if (cur === "account") {
       body = `<div class="two" style="align-items:start"><div class="card"><h3>Your profile</h3><form id="pf"><label>Full name</label><input type="text" name="full_name" value="${esc(S.profile.full_name || "")}" /><label>Email</label><input type="email" value="${esc(S.profile.email)}" disabled /><label>Role</label><input type="text" value="${roleLabel(S.role)}${S.org ? " · " + esc(S.org.name) : ""}" disabled /><div class="modal-foot" style="justify-content:flex-start"><button class="btn">Save</button></div></form></div>
