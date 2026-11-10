@@ -276,3 +276,7 @@ select.complete, select.na { color: var(--ok); } select.in_progress { color: var
 
 .editlink { background: none; border: 0; padding: 2px 0; color: var(--brass-ink); font-weight: 700; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; border-bottom: 1px solid transparent; }
 .editlink:hover { border-bottom-color: var(--brass); }
+
+/* in a workspace the logo lives in the sidebar; the top bar shows it only on phones (where the sidebar is hidden) */
+.shell.in-ws .brand .logo { display: none; }
+@media (max-width: 760px) { .shell.in-ws .brand .logo { display: grid; } .shell.in-ws .brand .logo.wide { display: block; } }
