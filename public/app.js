@@ -221,14 +221,14 @@
     const viewAs = isRealSuper() && inWorkspace ? `<div class="viewas"><span class="small muted">View as</span><select id="viewas">
         <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="owner" ${S.viewAs === "owner" ? "selected" : ""}>Owner</option><option value="staff" ${S.viewAs === "staff" ? "selected" : ""}>Staff</option><option value="employee" ${S.viewAs === "employee" ? "selected" : ""}>Employee</option></select></div>` : "";
     const sideTop = inWorkspace
-      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : `<div class="ws-mono">${esc(initials(S.org.name))}</div>`}<div class="ws-name">${esc(S.org.name)}</div><div class="ws-sub"><span class="rolebadge" title="${esc(ROLE[effRole()]?.blurb || "")}">${isRealSuper() && S.viewAs ? "Viewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</span></div></div>`
+      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : `<div class="ws-mono">${esc(initials(S.org.name))}</div><div class="ws-name">${esc(S.org.name)}</div>`}<div class="ws-sub"><span class="rolebadge" title="${esc(ROLE[effRole()]?.blurb || "")}">${isRealSuper() && S.viewAs ? "Viewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</span></div></div>`
       : `<div class="ws-card hq"><div class="ws-mono">HH</div><div class="ws-name">JHM Consulting</div><div class="ws-sub"><span class="rolebadge">JHM admin</span></div></div>`;
     let collapsed = false; try { collapsed = localStorage.getItem("hhg.side") === "1"; } catch {}
     app.innerHTML = `
       <div class="shell ${inWorkspace ? "in-ws" : "hq"} ${collapsed ? "collapsed" : ""}">
         <header class="topbar">
           <button class="navtoggle" id="navtoggle" title="${collapsed ? "Expand" : "Collapse"} sidebar" aria-label="Toggle sidebar">☰</button>
-          <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div><div class="sub">${inWorkspace ? roleLabel(effRole()) + " view" : "The Hope Harvest Group · JHM Consulting"}</div></div></div>
+          <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div>${inWorkspace ? "" : `<div class="sub">The Hope Harvest Group · JHM Consulting</div>`}</div></div>
           ${inWorkspace ? `<button class="searchbar" id="opensearch"><span>⌕</span><span class="ph">Search people, jobs, tasks, documents…</span><kbd>⌘K</kbd></button>` : ""}
           <div class="spacer"></div>${viewAs}${orgSwitch}
           <div class="avatar" id="avatar" title="${esc(S.profile.email)}">${esc(initials(S.profile.full_name || S.profile.email))}</div>
@@ -331,7 +331,7 @@
       : `<div class="empty"><h3>No documents here yet</h3><p>${isStaff() ? "Upload a handbook, policy, job description or benefits handout to get started." : "Your HR consultant hasn't shared anything in this category yet."}</p></div>`;
 
     return `
-      <div class="page-head"><div><h1>Documents</h1><p>${isStaff() ? "Everything you've shared with " + esc(S.org.name) + "." : "Your company's HR documents, shared by JHM Consulting."}</p></div>
+      <div class="page-head"><div><h1>Documents</h1><p>${isStaff() ? "Handbook, policies, forms and benefits — shared with the team or kept HR-only." : "Your company's HR documents, shared by JHM Consulting."}</p></div>
         ${isStaff() ? `<button class="btn" id="upload">＋ Upload document</button>` : ""}</div>
       <div class="filters"><button class="chip ${docFilter === "all" ? "active" : ""}" data-c="all">All (${docs.length})</button>
         ${Object.keys(CATS).filter((c) => counts[c]).map((c) => `<button class="chip ${docFilter === c ? "active" : ""}" data-c="${c}">${CATS[c]} (${counts[c]})</button>`).join("")}</div>
@@ -594,7 +594,7 @@
       const s2 = $("#empsearch"); if (s2) { s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); }
     };
     return `
-      <div class="page-head"><div><h1>Employees</h1><p>${esc(S.org.name)}'s employee records and onboarding.</p></div><button class="btn" id="newemp">＋ Add employee</button></div>
+      <div class="page-head"><div><h1>Employees</h1><p>Employee records and onboarding.</p></div><button class="btn" id="newemp">＋ Add employee</button></div>
       <div class="filters">${[["current", "Current"], ["onboarding", "Onboarding"], ["active", "Active"], ["leave", "On leave"], ["terminated", "Terminated"], ["all", "All"]].map(([k, v]) => `<button class="chip ${empFilter === k ? "active" : ""}" data-c="${k}">${v}${k !== "all" ? ` (${counts[k]})` : ""}</button>`).join("")}</div>
       <div class="filters"><input class="search" id="empsearch" type="text" placeholder="Search by name, title, department…" value="${esc(empSearch)}" /></div>
       ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Employee</th><th>Title</th><th>Department</th><th>Start</th><th>Status</th><th>Onboarding</th></tr></thead><tbody>
@@ -847,7 +847,7 @@
     };
     const me = S.session.user.id;
     return `
-      <div class="page-head"><div><h1>People</h1><p>Who can sign in to ${esc(S.org.name)}, and what they can see.</p></div><button class="btn" id="invite">＋ Invite someone</button></div>
+      <div class="page-head"><div><h1>People</h1><p>Who can sign in, and what they can see.</p></div><button class="btn" id="invite">＋ Invite someone</button></div>
       <div class="card" style="margin-bottom:14px"><table><thead><tr><th>Name</th><th>Email</th><th>Access</th><th></th></tr></thead><tbody>
         ${mems.map((m) => `<tr><td><b>${esc(m.profile?.full_name || "—")}</b>${m.user_id === me ? ' <span class="pill">you</span>' : ""}</td><td class="muted">${esc(m.profile?.email || "")}</td>
           <td>${m.user_id === me && !isSuper() ? `<span class="pill on">Owner</span>` : `<select data-role="${m.id}" style="width:auto;padding:5px 8px">${["owner", "staff", "employee"].map((r) => `<option value="${r}" ${(m.role === r || (r === "owner" && m.role === "admin") || (r === "employee" && m.role === "member")) ? "selected" : ""}>${ROLE[r].label}</option>`).join("")}</select>`}</td>
@@ -973,7 +973,7 @@
       $("#main").querySelectorAll("[data-req]").forEach((el) => el.onclick = () => requestDetail(reqs.find((r) => r.id === el.dataset.req)));
     };
     return `
-      <div class="page-head"><div>${S.org ? `<div class="eyebrow">${esc(S.org.name)}</div>` : ""}<h1>${S.org ? "Ask JHM" : "Client requests"}</h1><p>${S.org ? (mineOnly ? "Your questions to JHM Consulting, and the answers. Nothing here is visible to other employees." : "Questions " + esc(S.org.name) + " has sent to JHM Consulting, and the replies.") : "Inbox across all clients."}</p></div>
+      <div class="page-head"><div><h1>${S.org ? "Ask JHM" : "Client requests"}</h1><p>${S.org ? (mineOnly ? "Your questions to JHM Consulting, and the answers. Nothing here is visible to other employees." : "Questions " + esc(S.org.name) + " has sent to JHM Consulting, and the replies.") : "Inbox across all clients."}</p></div>
         ${S.org ? `<button class="btn" id="newreq">＋ New question</button>` : ""}</div>
       <div class="filters">${[["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"], ["all", "All"]].map(([k, v]) => `<button class="chip ${reqFilter === k ? "active" : ""}" data-c="${k}">${v}</button>`).join("")}</div>
       <div class="list">${list.length ? list.map((r) => `<div class="row" data-req="${r.id}" style="cursor:pointer"><div class="icon ${r.urgency === "Urgent" ? "urgent" : ""}">${r.urgency === "Urgent" ? "!" : "✉"}</div>
@@ -1011,7 +1011,7 @@
         sb.from("requests").select("id,subject,status,created_at").eq("org_id", S.org.id).eq("user_id", S.session.user.id).order("created_at", { ascending: false }).limit(5),
       ]);
       window.__afterRender = () => { $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openFile(b.dataset.open)); const a = $("#ask"); if (a) a.onclick = () => requestModal(); const a2 = $("#ask2"); if (a2) a2.onclick = () => requestModal(); };
-      return `<div class="hero"><div class="eyebrow">${esc(S.org.name)}</div><h1>${greet}${first ? ", " + esc(first) : ""}.</h1><p>Your profile, your company's HR documents, and a direct line to your HR consultant.</p></div>
+      return `<div class="hero"><h1>${greet}${first ? ", " + esc(first) : ""}.</h1><p>Your profile, your company's HR documents, and a direct line to your HR consultant.</p></div>
         ${mods().employees ? `<div class="quick"><a class="btn sm" href="#me">My profile</a><a class="btn sm quiet" href="#docs">Documents</a><button class="btn sm quiet" id="ask2">Ask JHM</button></div>` : ""}
         <div class="two"><div class="card"><h3>Recent documents</h3>${(docs || []).length ? docs.map((d) => `<div class="sub-row"><div><b>${esc(d.title)}</b><div class="small muted">${CATS[d.category]} · ${fmtDate(d.updated_at)}</div></div><button class="btn sm ghost" data-open="${d.file_path}">Open</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Nothing shared yet.</p>`}<a href="#docs" class="small" style="display:inline-block;margin-top:10px">All documents →</a></div>
         <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>Your requests</h3><button class="btn sm" id="ask">Ask JHM</button></div>${(reqs || []).length ? reqs.map((r) => `<div class="sub-row"><div><b>${esc(r.subject)}</b><div class="small muted">${fmtDate(r.created_at)}</div></div><span class="pill ${r.status === "resolved" ? "" : "on"}">${REQ_STATUS[r.status]}</span></div>`).join("") : `<p class="small muted" style="margin-top:8px">No questions yet.</p>`}</div></div>`;
@@ -1033,7 +1033,7 @@
     };
     const tile = (n, l, h, warn) => `<a href="${h}" class="tile ${warn && n ? "warn" : ""}"><b>${n}</b><span>${l}</span></a>`;
     return `
-      <div class="hero"><div class="eyebrow">${esc(S.org.name)} · ${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</div><h1>${greet}${first ? ", " + esc(first) : ""}.</h1>
+      <div class="hero"><div class="eyebrow">${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</div><h1>${greet}${first ? ", " + esc(first) : ""}.</h1>
         <p>${overdue.length ? `<b class="late">${overdue.length} overdue task${overdue.length > 1 ? "s" : ""}</b> need attention.` : T.length ? `${T.length} task${T.length > 1 ? "s" : ""} due in the next week.` : "Everything is on schedule."}${R.length ? ` ${R.length} open request${R.length > 1 ? "s" : ""}.` : ""}</p></div>
       <div class="tiles">${tile(E.filter((e) => e.status === "active").length, "Active employees", "#employees")}${tile(E.filter((e) => e.status === "onboarding").length, "Onboarding", "#employees", true)}${tile(J.length, "Open positions", "#hiring")}${tile(activeCands, "Active candidates", "#hiring")}${tile(overdue.length, "Overdue tasks", "#tasks", true)}${tile(R.length, "Open questions", "#requests", true)}</div>
       <div class="quick"><span class="eyebrow">Quick actions</span><button class="btn sm" data-act="emp">＋ Employee</button><button class="btn sm quiet" data-act="job">＋ Job order</button><button class="btn sm quiet" data-act="doc">↑ Upload document</button><button class="btn sm quiet" data-act="inv">Invite user</button><button class="btn sm quiet" data-act="ask">Ask JHM a question</button><button class="btn sm quiet" data-act="srch">⌕ Search</button></div>
@@ -1059,7 +1059,7 @@
   // ------------------------------------------------------------ MY PROFILE (employee self-service)
   async function viewMyProfile() {
     const { data: e } = await sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("org_id", S.org.id).eq("user_id", S.session.user.id).maybeSingle();
-    if (!e) return `<div class="hero"><div class="eyebrow">${esc(S.org.name)}</div><h1>My profile</h1></div><div class="empty"><h3>Your employee record isn't linked yet</h3><p>Your administrator adds your record and links it to <b>${esc(S.profile.email)}</b>. Until then, your documents and Ask JHM are available from the sidebar.</p></div>`;
+    if (!e) return `<div class="hero"><h1>My profile</h1></div><div class="empty"><h3>Your employee record isn't linked yet</h3><p>Your administrator adds your record and links it to <b>${esc(S.profile.email)}</b>. Until then, your documents and Ask JHM are available from the sidebar.</p></div>`;
     const [{ data: tasks }, { data: contacts }, { data: deps }] = await Promise.all([
       sb.from("employee_tasks").select("*, template_doc:template_doc_id(id,title,file_path,file_name,mime_type)").eq("employee_id", e.id).order("sort_order"),
       sb.from("emergency_contacts").select("*").eq("employee_id", e.id).order("is_primary", { ascending: false }),
@@ -1077,7 +1077,7 @@
       $("#main").querySelectorAll("[data-sign]").forEach((b) => b.onclick = () => signModal(e, (tasks || []).find((t) => t.id === b.dataset.sign)));
     };
     return `
-      <div class="hero"><div class="eyebrow">${esc(S.org.name)} · ${EMP_STATUS[e.status]}</div><h1>${esc(empName(e))}</h1><p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ") || "Your employee profile."}</p></div>
+      <div class="hero"><div class="eyebrow">${EMP_STATUS[e.status]}</div><h1>${esc(empName(e))}</h1><p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ") || "Your employee profile."}</p></div>
       <div class="two" style="align-items:start">
         <div class="card"><h3>Personal</h3>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}<p class="small muted" style="margin:10px 0 0">Need something corrected? <a href="#" id="askchange">Ask JHM</a>.</p></div>
         <div class="card"><h3>Contact</h3>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
@@ -1118,7 +1118,7 @@
     const dirRows = () => { const q2 = dirSearch.toLowerCase(); const l = P.filter((p) => !q2 || `${name(p)} ${p.first_name} ${p.job_title || ""} ${p.department || ""} ${p.work_email || ""}`.toLowerCase().includes(q2));
       return l.length ? l.map((p) => `<tr class="${canOpen ? "clickable" : ""}" ${canOpen ? `onclick="location.hash='#employees/${p.id}'"` : ""}><td><b>${esc(name(p))}</b></td><td>${esc(p.job_title || "—")}</td><td>${esc(p.department || "—")}</td><td>${p.work_email ? `<a href="mailto:${esc(p.work_email)}" onclick="event.stopPropagation()">${esc(p.work_email)}</a>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(mgrName(p.manager_id) || "—")}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`; };
     return `
-      <div class="page-head"><div><div class="eyebrow">${esc(S.org.name)}</div><h1>Org chart</h1><p>${canOpen ? `${P.length} people · built from each employee's manager. Set a manager on an employee's profile to place them.` : "You and your direct reports."}</p></div>${canOpen ? `<button class="btn" id="addemp">＋ Add employee</button>` : ""}</div>
+      <div class="page-head"><div><h1>Org chart</h1><p>${canOpen ? `${P.length} people · built from each employee's manager. Set a manager on an employee's profile to place them.` : "You and your direct reports."}</p></div>${canOpen ? `<button class="btn" id="addemp">＋ Add employee</button>` : ""}</div>
       ${P.length ? `<div class="card oc-wrap"><ul class="oc">${roots.map((r) => node(r)).join("")}</ul></div>` : `<div class="empty"><h3>No one here yet</h3><p>${canOpen ? "Add employees and set their managers — the chart draws itself." : "Your company hasn't added employees yet."}</p></div>`}
       <div class="page-head" style="margin-top:28px"><div><h2>Directory</h2></div><input class="search" id="dirsearch" type="text" placeholder="Search name, title, department, email…" value="${esc(dirSearch)}" /></div>
       <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Work email</th><th>Reports to</th></tr></thead><tbody id="dirrows">${dirRows()}</tbody></table></div>`;
@@ -1199,7 +1199,7 @@
       $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); openFile(b.dataset.open); });
     };
     return `
-      <div class="page-head"><div><div class="eyebrow">${esc(S.org.name)}</div><h1>Tasks</h1><p>Onboarding and compliance items across every employee.</p></div></div>
+      <div class="page-head"><div><h1>Tasks</h1><p>Onboarding and compliance items across every employee.</p></div></div>
       <div class="filters">${[["overdue", "Overdue"], ["soon", "Due this week"], ["open", "All open"], ["done", "Completed"], ["all", "Everything"]].map(([k, v]) => `<button class="chip ${taskFilter === k ? "active" : ""} ${k === "overdue" && groups.overdue.length ? "alert" : ""}" data-c="${k}">${v} (${groups[k].length})</button>`).join("")}</div>
       ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Task</th><th>Employee</th><th>Due</th><th>File</th><th>Status</th></tr></thead><tbody>
         ${list.map((t) => { const e = t.employees || {}; const late = isOpen(t) && t.due_date && t.due_date < t0; return `<tr class="clickable" data-task="${t.id}"><td><b>${esc(t.label)}</b>${t.notes ? `<div class="small muted">${esc(t.notes)}</div>` : ""}</td><td><a href="#employees/${t.employee_id}" onclick="event.stopPropagation()">${esc((e.preferred_name || e.first_name || "") + " " + (e.last_name || ""))}</a></td><td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "") + fmtDate(t.due_date) : "—"}</td><td>${t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄</button>` : '<span class="small muted">—</span>'}</td><td><span class="pill ${t.status === "complete" ? "ok" : t.status === "in_progress" ? "on" : t.status === "na" ? "" : "warn"}">${TASK_STATUS[t.status]}</span></td></tr>`; }).join("")}
@@ -1272,7 +1272,7 @@
     if (cur === "portal") body = `<div class="card"><h3>Portal administration</h3><p class="small muted">Client workspaces, logos, modules and access are managed from the Clients screen.</p><a class="btn quiet" href="#admin">Go to Clients →</a></div>`;
 
     window.__afterRender = hook;
-    return `<div class="page-head"><div>${S.org ? `<div class="eyebrow">${esc(S.org.name)}</div>` : ""}<h1>Settings</h1></div></div>
+    return `<div class="page-head"><div><h1>Settings</h1></div></div>
       <div class="settings"><nav class="subnav">${tabs.map((x) => `<a href="#settings/${x.k}" class="${x.k === cur ? "active" : ""}"><b>${x.t}</b><span>${x.d}</span></a>`).join("")}</nav><div class="settings-body">${body}</div></div>`;
   }
 
