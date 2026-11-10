@@ -60,6 +60,8 @@
     clearTimeout(toastT); toastT = setTimeout(() => (t.className = "toast"), err ? 5000 : 2600);
   }
   function fail(e) { console.error(e); toast(e?.message || String(e), true); }
+  window.addEventListener("unhandledrejection", (ev) => fail(ev.reason || "Unexpected error"));
+  window.addEventListener("error", (ev) => { if (ev.message) toast(ev.message, true); });
 
   function modal(html, { wide = false } = {}) {
     const root = $("#modal-root");
@@ -282,7 +284,7 @@
       else if (route === "home") html = await viewHome();
       else if (M.documents || !S.org) html = await viewDocs();
       else html = await viewHome();
-    } catch (e) { fail(e); html = `<div class="empty">Something went wrong loading this page.</div>`; }
+    } catch (e) { fail(e); html = `<div class="empty"><h3>This page couldn't load</h3><p class="small">${esc(e?.message || e)}</p></div>`; }
     if (token !== render.seq) return;   // a newer render superseded this one
     renderShell(html);
     const hook = window.__afterRender; window.__afterRender = null; if (hook) hook();
@@ -450,13 +452,14 @@
     }); };
   }
   async function viewJobOrder(id) {
-    const [{ data: job, error }, { data: cands }, { data: acts }, { data: jfiles }] = await Promise.all([
+    const jr = await Promise.all([
       sb.from("job_orders").select("*, process_doc:process_doc_id(id,title,file_path)").eq("id", id).single(),
       sb.from("candidates").select("*").eq("job_order_id", id).order("created_at"),
       sb.from("activity_log").select("*, actor:actor_id(full_name)").eq("org_id", S.org.id).in("entity_type", ["job_order", "candidate"]).order("created_at", { ascending: false }).limit(60),
       sb.from("job_order_files").select("*").eq("job_order_id", id).order("created_at"),
     ]);
-    if (error) throw error;
+    const badj = jr.find((r) => r.error); if (badj) throw new Error(badj.error.message);
+    const job = jr[0].data, cands = jr[1].data || [], acts = jr[2].data || [], jfiles = jr[3].data || [];
     const candIds = new Set(cands.map((c) => c.id));
     const activity = (acts || []).filter((a) => a.entity_id === id || candIds.has(a.entity_id) || a.detail?.job_order_id === id).slice(0, 25);
 
@@ -660,14 +663,15 @@
   }
 
   async function viewEmployee(id) {
-    const [{ data: e, error }, { data: tasks }, { data: contacts }, { data: deps }, { data: files }] = await Promise.all([
+    const results = await Promise.all([
       sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("id", id).single(),
       sb.from("employee_tasks").select("*, completed_by(id,full_name), template_doc:template_doc_id(id,title,file_path,file_name,mime_type)").eq("employee_id", id).order("sort_order"),
       sb.from("emergency_contacts").select("*").eq("employee_id", id).order("is_primary", { ascending: false }),
       sb.from("dependents").select("*").eq("employee_id", id).order("date_of_birth"),
       sb.from("employee_files").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
     ]);
-    if (error) throw error;
+    const bad = results.find((r) => r.error); if (bad) throw new Error(bad.error.message + (/column|relation|does not exist/i.test(bad.error.message) ? " — run the latest SQL files in supabase/ (006, 007)." : ""));
+    const e = results[0].data, tasks = results[1].data || [], contacts = results[2].data || [], deps = results[3].data || [], files = results[4].data || [];
     const done = tasks.filter((t) => t.status === "complete" || t.status === "na").length;
     const today = new Date().toISOString().slice(0, 10);
     const field = (l, v) => `<div class="fld"><span>${l}</span><b>${v ? esc(v) : "<span class='muted'>—</span>"}</b></div>`;
@@ -1060,11 +1064,13 @@
   async function viewMyProfile() {
     const { data: e } = await sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("org_id", S.org.id).eq("user_id", S.session.user.id).maybeSingle();
     if (!e) return `<div class="hero"><h1>My profile</h1></div><div class="empty"><h3>Your employee record isn't linked yet</h3><p>Your administrator adds your record and links it to <b>${esc(S.profile.email)}</b>. Until then, your documents and Ask JHM are available from the sidebar.</p></div>`;
-    const [{ data: tasks }, { data: contacts }, { data: deps }] = await Promise.all([
+    const rs = await Promise.all([
       sb.from("employee_tasks").select("*, template_doc:template_doc_id(id,title,file_path,file_name,mime_type)").eq("employee_id", e.id).order("sort_order"),
       sb.from("emergency_contacts").select("*").eq("employee_id", e.id).order("is_primary", { ascending: false }),
       sb.from("dependents").select("*").eq("employee_id", e.id).order("date_of_birth"),
     ]);
+    const badq = rs.find((r) => r.error); if (badq) throw new Error(badq.error.message);
+    const tasks = rs[0].data || [], contacts = rs[1].data || [], deps = rs[2].data || [];
     const field = (l, v) => `<div class="fld"><span>${l}</span><b>${v ? esc(v) : "<span class='muted'>—</span>"}</b></div>`;
     const done = (tasks || []).filter((t) => ["complete", "na"].includes(t.status)).length;
     window.__afterRender = () => {
