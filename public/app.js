@@ -459,7 +459,7 @@
     const jr = await Promise.all([
       sb.from("job_orders").select("*, process_doc:process_doc_id(id,title,file_path)").eq("id", id).single(),
       sb.from("candidates").select("*").eq("job_order_id", id).order("created_at"),
-      sb.from("activity_log").select("*, actor:actor_id(full_name)").eq("org_id", S.org.id).in("entity_type", ["job_order", "candidate"]).order("created_at", { ascending: false }).limit(60),
+      sb.from("activity_log").select("*, actor:actor_id(full_name,email)").eq("org_id", S.org.id).in("entity_type", ["job_order", "candidate"]).order("created_at", { ascending: false }).limit(60),
       sb.from("job_order_files").select("*").eq("job_order_id", id).order("created_at"),
     ]);
     const badj = jr.find((r) => r.error); if (badj) throw new Error(badj.error.message);
@@ -505,7 +505,7 @@
       <div class="board">${STAGES.map((s) => { const list = cands.filter((c) => c.stage === s); return `<div class="col" data-stage="${s}"><h4>${STAGE_LABEL[s]}<span>${list.length}</span></h4>${list.map(candCard).join("")}</div>`; }).join("")}</div>
       <p class="small muted" style="margin-top:8px">Drag a candidate between columns, or open them to change stage, add notes and view the resume.</p>
       <h3 style="margin:22px 0 8px">Activity</h3>
-      <div class="card">${activity.length ? activity.map((a) => `<div class="act"><time>${fmtDT(a.created_at)}</time><b>${esc(a.actor?.full_name || "Someone")}</b> ${esc(actText(a))}</div>`).join("") : `<span class="muted small">Nothing yet.</span>`}</div>`;
+      <div class="card">${activity.length ? activity.map((a) => `<div class="act"><time>${fmtDT(a.created_at)}</time><b>${esc(actorName(a))}</b> ${esc(actText(a))}</div>`).join("") : `<span class="muted small">Nothing yet.</span>`}</div>`;
   }
   function actText(a) {
     const d = a.detail || {};
@@ -1043,7 +1043,7 @@
       sb.from("job_orders").select("id,title,status,candidates(stage)").eq("org_id", S.org.id).in("status", ["open", "on_hold"]),
       sb.from("employee_tasks").select("id,label,due_date,status,employee_id,employees(first_name,last_name,preferred_name)").eq("org_id", S.org.id).in("status", ["pending", "in_progress"]).not("due_date", "is", null).lte("due_date", soon).order("due_date").limit(12),
       sb.from("requests").select("id,subject,status,urgency,created_at").eq("org_id", S.org.id).neq("status", "resolved").order("created_at", { ascending: false }).limit(5),
-      sb.from("activity_log").select("*, actor:actor_id(full_name)").eq("org_id", S.org.id).order("created_at", { ascending: false }).limit(8),
+      sb.from("activity_log").select("*, actor:actor_id(full_name,email)").eq("org_id", S.org.id).order("created_at", { ascending: false }).limit(8),
       sb.from("documents").select("id", { count: "exact", head: true }).eq("org_id", S.org.id),
     ]);
     const E = emps || [], J = jobs || [], T = tasks || [], R = reqs || [];
@@ -1065,9 +1065,10 @@
         <div class="card"><div class="card-head"><h3>Open questions for JHM</h3><a href="#requests" class="small">All →</a></div>
           ${R.length ? R.map((r) => `<div class="sub-row link" data-req="${r.id}"><div><b>${esc(r.subject)}</b><div class="small muted">${fmtDT(r.created_at)}${r.urgency === "Urgent" ? ' · <span class="late">Urgent</span>' : ""}</div></div><span class="pill ${r.status === "new" ? "warn" : "on"}">${REQ_STATUS[r.status]}</span></div>`).join("") : `<p class="small muted" style="margin-top:8px">No open requests.</p>`}</div>
         <div class="card" style="grid-column:1/-1"><div class="card-head"><h3>Recent activity</h3></div>
-          ${(acts || []).length ? acts.map((a) => `<div class="act"><time>${fmtDT(a.created_at)}</time><b>${esc(a.actor?.full_name || "Someone")}</b> ${esc(actAny(a))}</div>`).join("") : `<p class="small muted">No activity yet.</p>`}</div>
+          ${(acts || []).length ? acts.map((a) => `<div class="act"><time>${fmtDT(a.created_at)}</time><b>${esc(actorName(a))}</b> ${esc(actAny(a))}</div>`).join("") : `<p class="small muted">No activity yet.</p>`}</div>
       </div>`;
   }
+  const actorName = (a) => a.actor?.full_name || (a.actor_id === S.session.user.id ? (S.profile.full_name || "You") : a.actor ? a.actor.email || "A user" : "JHM Consulting");
   function actAny(a) {
     const d = a.detail || {};
     if (a.entity_type === "job_order" || a.entity_type === "candidate") return actText(a);
