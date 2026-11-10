@@ -203,12 +203,12 @@
     const inWorkspace = !!S.org;
     const accent = (inWorkspace && S.org.accent) || "#23305a";
     document.documentElement.style.setProperty("--accent", accent);
-    const logo = inWorkspace && S.logoUrl ? `<img class="logo" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(inWorkspace ? S.org.name : "HH"))}</div>`;
+    const logo = inWorkspace && S.logoUrl ? `<img class="logo wide" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(inWorkspace ? S.org.name : "HH"))}</div>`;
     const orgSwitch = S.orgs.length > 1 && inWorkspace ? `<div class="org-switch"><select id="orgsel">${S.orgs.map((o) => `<option value="${o.id}" ${o.id === S.org?.id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></div>` : "";
     const viewAs = isRealSuper() && inWorkspace ? `<div class="viewas"><span class="small muted">View as</span><select id="viewas">
         <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="admin" ${S.viewAs === "admin" ? "selected" : ""}>Client admin</option><option value="member" ${S.viewAs === "member" ? "selected" : ""}>Staff</option></select></div>` : "";
     const sideTop = inWorkspace
-      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}<div class="ws-name">${esc(S.org.name)}</div><div class="ws-sub">${isRealSuper() && S.viewAs ? "Previewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</div></div>`
+      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : ""}<div class="ws-name">${esc(S.org.name)}</div><div class="ws-sub">${isRealSuper() && S.viewAs ? "Previewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</div></div>`
       : `<div class="ws-card hq"><div class="ws-name">JHM Consulting</div><div class="ws-sub">Portal administration</div></div>`;
     app.innerHTML = `
       <div class="shell ${inWorkspace ? "in-ws" : "hq"}">
