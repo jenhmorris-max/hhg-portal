@@ -205,7 +205,7 @@
     if (M.employees) items.push({ h: "#org", t: "Org chart", i: "⌥" });
     if (isStaff()) { if (M.employees) items.push({ h: "#employees", t: "Employees", i: "☰" }); if (M.hiring) items.push({ h: "#hiring", t: "Hiring", i: "◫" }); if (M.tasks && M.employees) items.push({ h: "#tasks", t: "Tasks", i: "☑" }); }
     if (isAdmin()) items.push({ h: "#people", t: "People", i: "◉" });
-    if (M.requests) items.push({ h: "#requests", t: "Requests", i: "✉" });
+    if (M.requests) items.push({ h: "#requests", t: "Ask JHM", i: "✉" });
     items.push({ h: "#settings", t: "Settings", i: "⚙" });
     return items;
   }
@@ -237,7 +237,6 @@
         </header>
         <div class="layout">
           <nav class="sidenav">${sideTop}${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}" title="${n.t}"><i>${n.i}</i><span class="lbl">${n.t}</span></a>`).join("")}
-            ${inWorkspace && mods().requests ? `<div class="sect lbl">Help</div><a href="#" id="askjhm" title="Ask JHM"><i>✉</i><span class="lbl">Ask JHM</span></a>` : ""}
             <button class="collapse" id="collapse" title="${collapsed ? "Expand" : "Collapse"} sidebar">${collapsed ? "»" : "«"}<span class="lbl"> Collapse</span></button></nav>
           <main class="main" id="main">${inner}</main>
         </div>
@@ -252,7 +251,6 @@
     const toggleSide = () => { try { localStorage.setItem("hhg.side", collapsed ? "0" : "1"); } catch {} render(); };
     $("#collapse").onclick = toggleSide; $("#navtoggle").onclick = toggleSide;
     const sel = $("#orgsel"); if (sel) sel.onchange = () => switchOrg(sel.value);
-    const ask = $("#askjhm"); if (ask) ask.onclick = (e) => { e.preventDefault(); requestModal(); };
     const va = $("#viewas"); if (va) va.onchange = () => { S.viewAs = va.value || null; const ok = navItems().some((n) => n.h === route); if (!ok) location.hash = "#home"; else render(); };
   }
 
@@ -975,8 +973,8 @@
       $("#main").querySelectorAll("[data-req]").forEach((el) => el.onclick = () => requestDetail(reqs.find((r) => r.id === el.dataset.req)));
     };
     return `
-      <div class="page-head"><div><h1>${S.org ? "Requests" : "Client requests"}</h1><p>${S.org ? (mineOnly ? "Questions you've sent to JHM Consulting and their replies." : "Everything " + esc(S.org.name) + " has asked JHM.") : "Inbox across all clients."}</p></div>
-        ${S.org ? `<button class="btn" id="newreq">＋ Ask JHM</button>` : ""}</div>
+      <div class="page-head"><div>${S.org ? `<div class="eyebrow">${esc(S.org.name)}</div>` : ""}<h1>${S.org ? "Ask JHM" : "Client requests"}</h1><p>${S.org ? (mineOnly ? "Your questions to JHM Consulting, and the answers. Nothing here is visible to other employees." : "Questions " + esc(S.org.name) + " has sent to JHM Consulting, and the replies.") : "Inbox across all clients."}</p></div>
+        ${S.org ? `<button class="btn" id="newreq">＋ New question</button>` : ""}</div>
       <div class="filters">${[["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"], ["all", "All"]].map(([k, v]) => `<button class="chip ${reqFilter === k ? "active" : ""}" data-c="${k}">${v}</button>`).join("")}</div>
       <div class="list">${list.length ? list.map((r) => `<div class="row" data-req="${r.id}" style="cursor:pointer"><div class="icon ${r.urgency === "Urgent" ? "urgent" : ""}">${r.urgency === "Urgent" ? "!" : "✉"}</div>
         <div class="grow"><div class="title">${esc(r.subject)}</div><div class="meta">${!S.org ? `<span><b>${esc(r.organizations?.name || "")}</b></span>` : ""}<span>${esc(r.profile?.full_name || r.profile?.email || "")}</span><span>${esc(r.category)}</span><span>${fmtDT(r.created_at)}</span>${r.response ? `<span>· Replied</span>` : ""}</div></div>
@@ -1037,12 +1035,12 @@
     return `
       <div class="hero"><div class="eyebrow">${esc(S.org.name)} · ${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</div><h1>${greet}${first ? ", " + esc(first) : ""}.</h1>
         <p>${overdue.length ? `<b class="late">${overdue.length} overdue task${overdue.length > 1 ? "s" : ""}</b> need attention.` : T.length ? `${T.length} task${T.length > 1 ? "s" : ""} due in the next week.` : "Everything is on schedule."}${R.length ? ` ${R.length} open request${R.length > 1 ? "s" : ""}.` : ""}</p></div>
-      <div class="tiles">${tile(E.filter((e) => e.status === "active").length, "Active employees", "#employees")}${tile(E.filter((e) => e.status === "onboarding").length, "Onboarding", "#employees", true)}${tile(J.length, "Open positions", "#hiring")}${tile(activeCands, "Active candidates", "#hiring")}${tile(overdue.length, "Overdue tasks", "#tasks", true)}${tile(R.length, "Open requests", "#requests", true)}</div>
-      <div class="quick"><span class="eyebrow">Quick actions</span><button class="btn sm" data-act="emp">＋ Employee</button><button class="btn sm quiet" data-act="job">＋ Job order</button><button class="btn sm quiet" data-act="doc">↑ Upload document</button><button class="btn sm quiet" data-act="inv">Invite user</button><button class="btn sm quiet" data-act="ask">Ask JHM</button><button class="btn sm quiet" data-act="srch">⌕ Search</button></div>
+      <div class="tiles">${tile(E.filter((e) => e.status === "active").length, "Active employees", "#employees")}${tile(E.filter((e) => e.status === "onboarding").length, "Onboarding", "#employees", true)}${tile(J.length, "Open positions", "#hiring")}${tile(activeCands, "Active candidates", "#hiring")}${tile(overdue.length, "Overdue tasks", "#tasks", true)}${tile(R.length, "Open questions", "#requests", true)}</div>
+      <div class="quick"><span class="eyebrow">Quick actions</span><button class="btn sm" data-act="emp">＋ Employee</button><button class="btn sm quiet" data-act="job">＋ Job order</button><button class="btn sm quiet" data-act="doc">↑ Upload document</button><button class="btn sm quiet" data-act="inv">Invite user</button><button class="btn sm quiet" data-act="ask">Ask JHM a question</button><button class="btn sm quiet" data-act="srch">⌕ Search</button></div>
       <div class="two" style="align-items:start">
         <div class="card"><div class="card-head"><h3>Needs attention</h3><a href="#tasks" class="small">All tasks →</a></div>
           ${T.length ? T.map((t) => { const late = t.due_date < t0; const e = t.employees || {}; return `<a class="sub-row link" href="#employees/${t.employee_id}"><div><b>${esc(t.label)}</b><div class="small muted">${esc((e.preferred_name || e.first_name || "") + " " + (e.last_name || ""))}</div></div><span class="small ${late ? "late" : "muted"}">${late ? "Overdue · " : "Due "}${fmtDate(t.due_date)}</span></a>`; }).join("") : `<p class="small muted" style="margin-top:8px">Nothing due in the next 7 days.</p>`}</div>
-        <div class="card"><div class="card-head"><h3>Open requests</h3><a href="#requests" class="small">All →</a></div>
+        <div class="card"><div class="card-head"><h3>Open questions for JHM</h3><a href="#requests" class="small">All →</a></div>
           ${R.length ? R.map((r) => `<div class="sub-row link" data-req="${r.id}"><div><b>${esc(r.subject)}</b><div class="small muted">${fmtDT(r.created_at)}${r.urgency === "Urgent" ? ' · <span class="late">Urgent</span>' : ""}</div></div><span class="pill ${r.status === "new" ? "warn" : "on"}">${REQ_STATUS[r.status]}</span></div>`).join("") : `<p class="small muted" style="margin-top:8px">No open requests.</p>`}</div>
         <div class="card" style="grid-column:1/-1"><div class="card-head"><h3>Recent activity</h3></div>
           ${(acts || []).length ? acts.map((a) => `<div class="act"><time>${fmtDT(a.created_at)}</time><b>${esc(a.actor?.full_name || "Someone")}</b> ${esc(actAny(a))}</div>`).join("") : `<p class="small muted">No activity yet.</p>`}</div>
@@ -1270,7 +1268,8 @@
     const c = [
       { t: "Home", k: "dashboard overview", go: () => (location.hash = "#home") },
       { t: "Documents", k: "files handbook policies library", go: () => (location.hash = "#docs") },
-      { t: "Requests · Ask JHM", k: "help question contact support", go: () => requestModal() },
+      { t: "Ask JHM", k: "help question contact support requests", go: () => (location.hash = "#requests") },
+      { t: "New question for JHM", k: "ask help request send", go: () => requestModal() },
       { t: "Settings", k: "profile password account company logo color", go: () => (location.hash = "#settings") },
     ];
     const M = mods();
