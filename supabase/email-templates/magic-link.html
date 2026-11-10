@@ -1,0 +1,80 @@
+<!-- Supabase → Authentication → Email Templates → Magic Link
+     Subject line:  You're invited to the HHG Client Portal
+     Paste everything below into the message body. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>You're invited to the HHG Client Portal</title>
+</head>
+<body style="margin:0;padding:0;background:#f7f6f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1d2230;">
+<!-- preheader (hidden) -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f7f6f2;">Your secure sign-in link from JHM Consulting. One click and you're in.</div>
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7f6f2;">
+<tr><td align="center" style="padding:32px 16px;">
+
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;">
+
+    <!-- header band -->
+    <tr><td style="background:#23305a;border-radius:16px 16px 0 0;padding:28px 32px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
+        <td style="width:44px;height:44px;background:#f6f4ee;border-radius:11px;text-align:center;vertical-align:middle;font-family:Georgia,'Times New Roman',serif;font-size:17px;font-weight:bold;color:#23305a;">HH</td>
+        <td style="padding-left:14px;color:#f6f4ee;">
+          <div style="font-size:17px;font-weight:700;letter-spacing:-.01em;">HHG Client Portal</div>
+          <div style="font-size:12px;opacity:.75;">The Hope Harvest Group &middot; JHM Consulting</div>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- terracotta accent line -->
+    <tr><td style="height:4px;background:#c2613c;"></td></tr>
+
+    <!-- body -->
+    <tr><td style="background:#ffffff;padding:36px 32px 28px;border-left:1px solid #e4e2dc;border-right:1px solid #e4e2dc;">
+      <h1 style="margin:0 0 14px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;font-weight:600;color:#1d2230;">You're invited.</h1>
+      <p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#4b5266;">
+        {{ if .Data.invited_to }}<strong style="color:#1d2230;">{{ .Data.invited_to }}</strong> uses the HHG Client Portal with JHM Consulting for HR documents, hiring and employee records &mdash; and you've been given access.{{ else }}Here's your secure sign-in link for the HHG Client Portal, where your company's HR documents, hiring and employee records live.{{ end }}
+      </p>
+      <p style="margin:0 0 28px;font-size:16px;line-height:1.6;color:#4b5266;">Click the button to sign in. The first time, you'll be asked to add your name and choose a password.</p>
+
+      <!-- button -->
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto 28px;"><tr>
+        <td style="background:#23305a;border-radius:10px;">
+          <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 30px;font-size:16px;font-weight:700;color:#f6f4ee;text-decoration:none;border-radius:10px;">Open the portal &rarr;</a>
+        </td>
+      </tr></table>
+
+      <!-- what you'll find -->
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7f6f2;border-radius:12px;">
+        <tr><td style="padding:18px 20px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7e8598;margin-bottom:10px;">Inside the portal</div>
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="font-size:14px;line-height:1.7;color:#4b5266;">
+            <tr><td style="color:#c2613c;padding-right:10px;vertical-align:top;">&#9632;</td><td>Your handbook, policies and benefits handouts</td></tr>
+            <tr><td style="color:#c2613c;padding-right:10px;vertical-align:top;">&#9632;</td><td>Open positions and candidates, tracked together</td></tr>
+            <tr><td style="color:#c2613c;padding-right:10px;vertical-align:top;">&#9632;</td><td>Employee records and onboarding checklists</td></tr>
+            <tr><td style="color:#c2613c;padding-right:10px;vertical-align:top;">&#9632;</td><td>A direct line to your HR consultant with <em>Ask JHM</em></td></tr>
+          </table>
+        </td></tr>
+      </table>
+
+      <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#7e8598;">
+        This link signs you in once and expires soon. If the button doesn't work, paste this into your browser:<br>
+        <a href="{{ .ConfirmationURL }}" style="color:#23305a;word-break:break-all;">{{ .ConfirmationURL }}</a>
+      </p>
+    </td></tr>
+
+    <!-- footer -->
+    <tr><td style="background:#ffffff;border:1px solid #e4e2dc;border-top:0;border-radius:0 0 16px 16px;padding:18px 32px 22px;font-size:12px;line-height:1.6;color:#7e8598;">
+      Didn't expect this? You can ignore it &mdash; nothing happens unless the link is used.<br>
+      Sent by The Hope Harvest Group LLC &middot; JHM Consulting &middot; Tampa, FL
+    </td></tr>
+
+  </table>
+
+</td></tr>
+</table>
+</body>
+</html>
