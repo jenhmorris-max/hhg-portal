@@ -676,6 +676,11 @@
     const money = (n) => n == null ? "" : "$" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2 });
     window.__afterRender = () => {
       $("#editemp").onclick = () => employeeModal(e);
+      $("#empstatus").onchange = async (ev) => {
+        const status = ev.target.value; const upd = { status };
+        if (status === "terminated" && !e.termination_date) upd.termination_date = new Date().toISOString().slice(0, 10);
+        try { const { error } = await sb.from("employees").update(upd).eq("id", e.id); if (error) throw error; await log("employee", e.id, "status_" + status, { name: empName(e) }); toast(`${empName(e)} is now ${EMP_STATUS[status]}`); render(); } catch (err) { fail(err); render(); }
+      };
       $("#main").querySelectorAll("[data-editsec]").forEach((b) => b.onclick = () => employeeModal(e, b.dataset.editsec));
       const all = $("#allcomplete"); if (all) all.onclick = async () => {
         const open = tasks.filter((t) => !["complete", "na"].includes(t.status));
@@ -713,8 +718,9 @@
     };
     return `
       <div class="page-head"><div><a href="#employees" class="small">← All employees</a><h1>${esc(empName(e))}</h1>
-        <p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ")} <span class="pill ${e.status === "active" ? "on" : e.status === "onboarding" ? "warn" : ""}">${EMP_STATUS[e.status]}</span></p></div>
-        <button class="btn quiet" id="editemp">Edit profile</button></div>
+        <p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ")}</p></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="inline-label">Status</label><select id="empstatus" class="status-select ${e.status}">${Object.entries(EMP_STATUS).map(([k, v]) => `<option value="${k}" ${e.status === k ? "selected" : ""}>${v}</option>`).join("")}</select><button class="btn quiet" id="editemp">Edit profile</button></div></div>
+      ${e.status === "onboarding" && done === tasks.length && tasks.length ? `<div class="notice" style="margin-bottom:14px">All onboarding tasks are complete — this employee will switch to <b>Active</b> automatically; use the Status menu if you want it now.</div>` : ""}
 
       <div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3>Onboarding & compliance <span class="pill ${done === tasks.length ? "ok" : "on"}">${done}/${tasks.length}</span></h3>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${done < tasks.length ? `<button class="btn sm ghost" id="allcomplete">✓ Mark all complete</button>` : `<button class="btn sm quiet" id="reopenall">Reopen all</button>`}<button class="btn sm quiet" id="addtask">＋ Add task</button></div></div>
@@ -1046,7 +1052,7 @@
     const d = a.detail || {};
     if (a.entity_type === "job_order" || a.entity_type === "candidate") return actText(a);
     if (a.entity_type === "document") return `${a.action} document${d.title ? ` "${d.title}"` : ""}`;
-    if (a.entity_type === "employee") { if (a.action === "task_signed") return `signed "${d.task}" for ${d.name} (${d.signer})`; if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
+    if (a.entity_type === "employee") { if (a.action.startsWith("status_")) return `set ${d.name} to ${EMP_STATUS[a.action.slice(7)] || a.action.slice(7)}`; if (a.action === "task_signed") return `signed "${d.task}" for ${d.name} (${d.signer})`; if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
     if (a.entity_type === "membership") return a.action === "invited" ? `invited ${d.email} as ${d.role}` : `${a.action} ${d.email || "a user"}`;
     if (a.entity_type === "request") return `sent a request: "${d.subject}"`;
     return `${a.action} ${a.entity_type}`;
@@ -1114,7 +1120,7 @@
     const dirRows = () => { const q2 = dirSearch.toLowerCase(); const l = P.filter((p) => !q2 || `${name(p)} ${p.first_name} ${p.job_title || ""} ${p.department || ""} ${p.work_email || ""}`.toLowerCase().includes(q2));
       return l.length ? l.map((p) => `<tr class="${canOpen ? "clickable" : ""}" ${canOpen ? `onclick="location.hash='#employees/${p.id}'"` : ""}><td><b>${esc(name(p))}</b></td><td>${esc(p.job_title || "—")}</td><td>${esc(p.department || "—")}</td><td>${p.work_email ? `<a href="mailto:${esc(p.work_email)}" onclick="event.stopPropagation()">${esc(p.work_email)}</a>` : '<span class="muted">—</span>'}</td><td class="muted">${esc(mgrName(p.manager_id) || "—")}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`; };
     return `
-      <div class="page-head"><div><div class="eyebrow">${esc(S.org.name)}</div><h1>Org chart</h1><p>${P.length} people · built from each employee's manager. ${canOpen ? "Set a manager on an employee's profile to place them." : ""}</p></div>${canOpen ? `<button class="btn" id="addemp">＋ Add employee</button>` : ""}</div>
+      <div class="page-head"><div><div class="eyebrow">${esc(S.org.name)}</div><h1>Org chart</h1><p>${canOpen ? `${P.length} people · built from each employee's manager. Set a manager on an employee's profile to place them.` : "You and your direct reports."}</p></div>${canOpen ? `<button class="btn" id="addemp">＋ Add employee</button>` : ""}</div>
       ${P.length ? `<div class="card oc-wrap"><ul class="oc">${roots.map((r) => node(r)).join("")}</ul></div>` : `<div class="empty"><h3>No one here yet</h3><p>${canOpen ? "Add employees and set their managers — the chart draws itself." : "Your company hasn't added employees yet."}</p></div>`}
       <div class="page-head" style="margin-top:28px"><div><h2>Directory</h2></div><input class="search" id="dirsearch" type="text" placeholder="Search name, title, department, email…" value="${esc(dirSearch)}" /></div>
       <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Work email</th><th>Reports to</th></tr></thead><tbody id="dirrows">${dirRows()}</tbody></table></div>`;

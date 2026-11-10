@@ -38,7 +38,7 @@ Nobody can see another company's data — the database and the file bucket both 
 
 ### 1. Supabase project
 1. supabase.com → **New project**. Name `hhg-portal`, pick a strong database password (save it in your password manager), region **East US**.
-2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql`, `supabase/005_roles.sql` and `supabase/006_signatures.sql`.
+2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql`, `supabase/005_roles.sql`, `supabase/006_signatures.sql` and `supabase/007_activation_privacy.sql`.
 3. **Authentication → Providers → Email**: leave *Enable email provider* on and *Confirm email* on. Set minimum password length to 10 (Authentication → Policies / Password).
 4. **Authentication → URL Configuration**:
    - Site URL: `https://portal.hopeharvestgroup.com` (or wherever the portal will live; `http://localhost:8080` while testing).
@@ -108,4 +108,5 @@ supabase/
   004_job_files.sql  attachments on job orders
   005_roles.sql      four roles, modules, employee self-service linking, directory view
   006_signatures.sql onboarding templates (document per task) + e-signatures with stamped PDF
+  007_activation_privacy.sql auto-activate after onboarding; employees see only self + direct reports
 ```

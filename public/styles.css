@@ -293,3 +293,9 @@ table.tpl td { vertical-align: top; }
 .navtoggle { background: none; border: 1px solid transparent; border-radius: 9px; width: 36px; height: 36px; font-size: 18px; color: var(--ink-2); cursor: pointer; margin-right: 2px; }
 .navtoggle:hover { background: var(--paper-2); color: var(--ink); }
 @media (max-width: 760px) { .navtoggle { display: none; } }
+
+.inline-label { margin: 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.status-select { width: auto; padding: 8px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+.status-select.active { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.status-select.onboarding { color: var(--brass-ink); border-color: #c9d8f7; background: var(--brass-soft); }
+.status-select.terminated { color: var(--warn); background: var(--warn-soft); }
