@@ -34,3 +34,5 @@ grant select on public.directory to authenticated;
 drop policy if exists employees_self on public.employees;
 create policy employees_self on public.employees for select
   using (user_id = auth.uid() or manager_id = public.my_employee_id(org_id));
+
+notify pgrst, 'reload schema';

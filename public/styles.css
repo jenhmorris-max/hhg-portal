@@ -308,3 +308,19 @@ table.tpl td { vertical-align: top; }
 .subnav a:hover { background: #fff; border-color: var(--line); }
 .subnav a.active { background: #fff; border-color: var(--line); box-shadow: var(--shadow); } .subnav a.active b { color: var(--brass-ink); }
 @media (max-width: 900px) { .settings { grid-template-columns: 1fr; } .subnav { position: static; flex-direction: row; overflow-x: auto; } .subnav a span { display: none; } }
+
+/* workflow editor */
+.steps { display: flex; flex-direction: column; gap: 10px; }
+.step { padding: 14px 16px; }
+.step-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.stepno { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.step-head .s-label { flex: 2; min-width: 200px; font-weight: 700; } .step-head .s-type { flex: 1; min-width: 170px; }
+.step-tools { display: flex; gap: 4px; margin-left: auto; }
+.step .s-desc { margin-top: 8px; }
+.step-grid { display: grid; grid-template-columns: 2fr 1fr 2fr 1fr; gap: 12px; align-items: end; }
+.step-grid label { margin-top: 10px; }
+.dueline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; } .dueline select { width: auto; }
+.s-form { margin-top: 8px; padding: 10px 12px; background: var(--paper); border-radius: 10px; border: 1px dashed var(--line-2); }
+.frow { display: grid; grid-template-columns: 2fr 1fr 2fr auto auto; gap: 8px; align-items: center; margin-bottom: 6px; }
+.formbox { padding: 4px 14px 14px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); margin: 10px 0; }
+@media (max-width: 900px) { .step-grid, .frow { grid-template-columns: 1fr; } }

@@ -25,7 +25,8 @@ Nobody can see another company's data — the database and the file bucket both 
 - **Home** — dashboard: needs-attention tasks, open requests, numbers, activity, quick actions. Employees get a self-service home.
 - **Org chart & directory** — drawn from each employee's manager; name, title, department, work email. Visible to all tiers.
 - **Tasks** — every onboarding/compliance task across employees; overdue / due this week filters.
-- **Onboarding templates & e-signature** — Settings → Onboarding checklist: attach the document behind each task and require a signature. Signing (employee self-service or in person) draws a signature, records consent, and files a stamped PDF (original + certificate page with name, time, signer account).
+- **Forms & workflows** — Settings → Forms & workflows: Onboarding (auto on hire), Offboarding (auto on termination) and any custom workflow. Steps: review document / sign document / fill a form (form builder: text, long text, date, yes-no, dropdown, number) / upload a file / checklist; assigned to HR, manager or employee; due-date rules. Start any workflow from an employee's profile; employees complete their own steps on My profile.
+- **E-signature** — attach the document behind a step and require a signature. Signing (employee self-service or in person) draws a signature, records consent, and files a stamped PDF (original + certificate page with name, time, signer account).
 - **Search (⌘K / Ctrl+K or /)** — employees, jobs, candidates, tasks, documents, requests, and actions.
 - **Hiring** — job orders per client; candidates on a drag-and-drop board (Applied → Screening → Interview → Offer → Hired / Passed), resume upload, notes, attachments (full description, interview guide, scorecard), activity log of who did what. Shared between you and the client admin.
 - **Requests (Ask JHM)** — in-portal contact form; clients file questions, you reply from a cross-client inbox. No email addresses exposed.
@@ -38,7 +39,7 @@ Nobody can see another company's data — the database and the file bucket both 
 
 ### 1. Supabase project
 1. supabase.com → **New project**. Name `hhg-portal`, pick a strong database password (save it in your password manager), region **East US**.
-2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql`, `supabase/005_roles.sql`, `supabase/006_signatures.sql` and `supabase/007_activation_privacy.sql`.
+2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql`, `supabase/005_roles.sql`, `supabase/006_signatures.sql`, `supabase/007_activation_privacy.sql` and `supabase/008_workflows.sql`. If the portal ever says it "could not find a table in the schema cache", run `notify pgrst, 'reload schema';`.
 3. **Authentication → Providers → Email**: leave *Enable email provider* on and *Confirm email* on. Set minimum password length to 10 (Authentication → Policies / Password).
 4. **Authentication → URL Configuration**:
    - Site URL: `https://portal.hopeharvestgroup.com` (or wherever the portal will live; `http://localhost:8080` while testing).
@@ -109,4 +110,5 @@ supabase/
   005_roles.sql      four roles, modules, employee self-service linking, directory view
   006_signatures.sql onboarding templates (document per task) + e-signatures with stamped PDF
   007_activation_privacy.sql auto-activate after onboarding; employees see only self + direct reports
+  008_workflows.sql  forms & workflows: workflows, steps, runs, form builder, start_workflow RPC
 ```

@@ -160,3 +160,5 @@ create or replace view public.directory with (security_invoker = false) as
   from public.employees e
   where e.status <> 'terminated' and public.is_org_member(e.org_id);
 grant select on public.directory to authenticated;
+
+notify pgrst, 'reload schema';

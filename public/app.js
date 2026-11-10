@@ -23,6 +23,10 @@
   };
   const EMP_STATUS = { onboarding: "Onboarding", active: "Active", leave: "On leave", terminated: "Terminated" };
   const TASK_STATUS = { pending: "Pending", in_progress: "In progress", complete: "Complete", na: "N/A" };
+  const STEP_TYPES = { review: "Review a document", sign: "Sign a document", form: "Fill a form", upload: "Upload a file", checklist: "Checklist item" };
+  const ASSIGNEES = { hr: "HR / Staff", manager: "Manager", employee: "Employee" };
+  const FIELD_TYPES = { text: "Short text", textarea: "Long text", date: "Date", yesno: "Yes / No", select: "Dropdown", number: "Number" };
+
   const CATS = {
     handbook: "Handbook", policy: "Policies", job_description: "Job descriptions",
     benefits: "Benefits", form: "Forms", hiring_process: "Hiring process", other: "Other",
@@ -264,7 +268,7 @@
       return renderShell(`<div class="empty"><h3>No access yet</h3><p>Your account isn't attached to a client workspace.<br>Ask your HR consultant to invite <b>${esc(S.profile.email)}</b>.</p>
         </div>`);
     }
-    let [route, arg] = (location.hash || "#home").slice(1).split("/");
+    let [route, arg, arg2] = (location.hash || "#home").slice(1).split("/");
     if (route === "account") route = "settings";
     if ((route === "admin" || (route === "requests" && !S.org)) && isRealSuper()) { S.org = null; S.viewAs = null; try { localStorage.removeItem("hhg.org"); } catch {} }
     if (!S.org && !["requests", "settings"].includes(route)) route = "admin";   // super admin outside any workspace
@@ -280,7 +284,7 @@
       else if (route === "admin" && isRealSuper()) html = await viewAdmin();
       else if (route === "requests" && (!S.org || M.requests)) html = await viewRequests();
       else if (route === "tasks" && isStaff() && M.tasks) html = await viewTasks();
-      else if (route === "settings") html = await viewSettings(arg);
+      else if (route === "settings") html = await viewSettings(arg, arg2);
       else if (route === "home") html = await viewHome();
       else if (M.documents || !S.org) html = await viewDocs();
       else html = await viewHome();
@@ -669,7 +673,9 @@
       sb.from("emergency_contacts").select("*").eq("employee_id", id).order("is_primary", { ascending: false }),
       sb.from("dependents").select("*").eq("employee_id", id).order("date_of_birth"),
       sb.from("employee_files").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
+      sb.from("workflow_runs").select("*").eq("employee_id", id),
     ]);
+    const runsById = Object.fromEntries((results[5].data || []).map((r) => [r.id, { name: r.workflow_name, started_at: r.started_at, completed_at: r.completed_at }]));
     const bad = results.find((r) => r.error); if (bad) throw new Error(bad.error.message + (/column|relation|does not exist/i.test(bad.error.message) ? " — run the latest SQL files in supabase/ (006, 007)." : ""));
     const e = results[0].data, tasks = results[1].data || [], contacts = results[2].data || [], deps = results[3].data || [], files = results[4].data || [];
     const done = tasks.filter((t) => t.status === "complete" || t.status === "na").length;
@@ -684,6 +690,13 @@
         try { const { error } = await sb.from("employees").update(upd).eq("id", e.id); if (error) throw error; await log("employee", e.id, "status_" + status, { name: empName(e) }); toast(`${empName(e)} is now ${EMP_STATUS[status]}`); render(); } catch (err) { fail(err); render(); }
       };
       $("#main").querySelectorAll("[data-editsec]").forEach((b) => b.onclick = () => employeeModal(e, b.dataset.editsec));
+      $("#startwf").onclick = () => startWorkflowModal(e);
+      $("#main").querySelectorAll("[data-runall]").forEach((b) => b.onclick = async () => {
+        const open = tasks.filter((t) => t.run_id === b.dataset.runall && !["complete", "na"].includes(t.status));
+        if (!open.length) return;
+        if (!(await confirmBox("Mark all steps complete?", `${open.length} open step${open.length > 1 ? "s" : ""} will be marked complete.`, "Mark all complete"))) return;
+        try { const { error } = await sb.from("employee_tasks").update({ status: "complete", completed_at: new Date().toISOString(), completed_by: S.session.user.id }).in("id", open.map((t) => t.id)); if (error) throw error; render(); } catch (err) { fail(err); }
+      });
       const all = $("#allcomplete"); if (all) all.onclick = async () => {
         const open = tasks.filter((t) => !["complete", "na"].includes(t.status));
         if (!open.length) return;
@@ -724,16 +737,19 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="inline-label">Status</label><select id="empstatus" class="status-select ${e.status}">${Object.entries(EMP_STATUS).map(([k, v]) => `<option value="${k}" ${e.status === k ? "selected" : ""}>${v}</option>`).join("")}</select><button class="btn quiet" id="editemp">Edit profile</button></div></div>
       ${e.status === "onboarding" && done === tasks.length && tasks.length ? `<div class="notice" style="margin-bottom:14px">All onboarding tasks are complete — this employee will switch to <b>Active</b> automatically; use the Status menu if you want it now.</div>` : ""}
 
-      <div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3>Onboarding & compliance <span class="pill ${done === tasks.length ? "ok" : "on"}">${done}/${tasks.length}</span></h3>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${done < tasks.length ? `<button class="btn sm ghost" id="allcomplete">✓ Mark all complete</button>` : `<button class="btn sm quiet" id="reopenall">Reopen all</button>`}<button class="btn sm quiet" id="addtask">＋ Add task</button></div></div>
-        <table style="margin-top:8px"><tbody>${tasks.map((t) => { const late = t.due_date && t.due_date < today && !["complete", "na"].includes(t.status);
-          return `<tr class="clickable" data-task="${t.id}"><td style="width:46%"><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.notes ? `<div class="small">${esc(t.notes)}</div>` : ""}</td>
+      ${(() => {
+        const runs = {}; tasks.forEach((t) => { const k = t.run_id || "legacy"; (runs[k] = runs[k] || []).push(t); });
+        const runMeta = (k) => k === "legacy" ? { name: "Onboarding", completed_at: null } : (runsById[k] || { name: "Workflow" });
+        const taskRow = (t) => { const late = t.due_date && t.due_date < today && !["complete", "na"].includes(t.status);
+          return `<tr class="clickable" data-task="${t.id}"><td style="width:44%"><b>${esc(t.label)}</b> <span class="pill">${STEP_TYPES[t.step_type] ? STEP_TYPES[t.step_type].split(" ")[0] : ""}${t.assignee && t.assignee !== "hr" ? " · " + ASSIGNEES[t.assignee] : ""}</span>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.notes ? `<div class="small">${esc(t.notes)}</div>` : ""}</td>
             <td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "Due ") + fmtDate(t.due_date) : ""}</td>
-            <td>${t.signed_file_path ? `<button class="btn sm ghost" data-open="${t.signed_file_path}">✍ Signed copy</button>` : t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 ${esc(t.template_doc.title)}</button>${t.requires_signature ? ` <button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : ""}` : `<span class="small muted">No file</span>`}</td>
+            <td>${t.signed_file_path ? `<button class="btn sm ghost" data-open="${t.signed_file_path}">✍ Signed copy</button>` : t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 ${esc(t.template_doc.title)}</button>${t.requires_signature ? ` <button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : ""}` : t.form_data ? `<span class="pill ok">Form filled</span>` : `<span class="small muted">—</span>`}</td>
             <td style="text-align:right"><select data-tstatus="${t.id}" class="${t.status}" style="width:auto;padding:5px 8px">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${v}</option>`).join("")}</select>
-              ${t.completed_at ? `<div class="small muted">${esc(t.completed_by?.full_name || "")} · ${fmtDate(t.completed_at)}</div>` : ""}</td></tr>`; }).join("")}</tbody></table>
-        <p class="small muted" style="margin:10px 0 0">Click a task to upload a completed form, sign, or add a note. Set which document backs each task under <a href="#settings">Settings → Onboarding</a>.</p></div>
-
+              ${t.completed_at ? `<div class="small muted">${esc(t.completed_by?.full_name || "")} · ${fmtDate(t.completed_at)}</div>` : ""}</td></tr>`; };
+        const cards = Object.entries(runs).map(([k, list]) => { const meta = runMeta(k); const d = list.filter((t) => ["complete", "na"].includes(t.status)).length;
+          return `<div class="card" style="margin-bottom:14px"><div class="card-head"><h3>${esc(meta.name)} <span class="pill ${d === list.length ? "ok" : "on"}">${d}/${list.length}</span>${meta.started_at ? `<span class="small muted" style="margin-left:8px">started ${fmtDate(meta.started_at)}</span>` : ""}</h3><div style="display:flex;gap:6px">${d < list.length ? `<button class="btn sm ghost" data-runall="${k}">✓ Mark all complete</button>` : ""}</div></div><table><tbody>${list.map(taskRow).join("")}</tbody></table></div>`; }).join("");
+        return `<div class="card-head" style="margin:4px 0 10px"><h2 style="font-size:18px">Workflows</h2><div style="display:flex;gap:6px"><button class="btn sm quiet" id="addtask">＋ Ad-hoc task</button><button class="btn sm" id="startwf">▶ Start workflow</button></div></div>${cards || `<div class="empty" style="margin-bottom:14px"><h3>No workflows yet</h3><p>Start Onboarding or any other workflow for ${esc(empName(e))}.</p></div>`}`;
+      })()}
       <div class="two">
         <div class="card"><div class="card-head"><h3>Personal</h3><button class="editlink" data-editsec="personal">Edit</button></div>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}${field("Gender", e.gender)}${field("Marital status", e.marital_status)}</div>
         <div class="card"><div class="card-head"><h3>Contact</h3><button class="editlink" data-editsec="contact">Edit</button></div>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Home phone", e.home_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
@@ -751,6 +767,7 @@
   function taskModal(e, t = null) {
     const m = modal(`
       <div class="modal-head"><h3>${t ? esc(t.label) : "Add task"}</h3><button class="x" data-close>×</button></div>
+      ${t?.step_type === "form" && t.form_schema ? `<div class="formbox"><div class="eyebrow" style="margin-bottom:6px">Form</div>${renderForm(t.form_schema, t.form_data || {})}</div>` : ""}
       ${t && (t.template_doc_id || t.requires_signature) ? `<div class="signbox">${t.template_doc ? `<button type="button" class="btn sm ghost" id="opentpl">📄 Open ${esc(t.template_doc.title)}</button>` : `<span class="small muted">No template document set — pick one under Settings → Onboarding.</span>`}
         ${t.signed_at ? `<span class="pill ok">Signed by ${esc(t.signed_name || "")} · ${fmtDT(t.signed_at)}</span>${t.signed_file_path ? `<button type="button" class="btn sm quiet" id="opensigned">Open signed copy</button>` : ""}` : (t.requires_signature ? `<button type="button" class="btn sm" id="signnow">✍ Sign now</button>` : "")}</div>` : ""}
       <form id="f" novalidate>
@@ -770,8 +787,9 @@
       const doneNow = ["complete", "na"].includes(d.status);
       const rec = { status: d.status, due_date: d.due_date || null, notes: d.notes.trim() || null,
         completed_at: doneNow ? (t?.completed_at || new Date().toISOString()) : null, completed_by: doneNow ? (t?.completed_by?.id || S.session.user.id) : null };
+      if (t?.step_type === "form" && t.form_schema) { const fd = readForm(m.el, t.form_schema, doneNow); rec.form_data = fd; if (!doneNow && Object.values(fd).some((v) => v !== "" && v != null) && rec.status === "pending") rec.status = "in_progress"; }
       if (file) { rec.file_path = await uploadFile(file, "employees/" + e.id); rec.file_name = file.name; if (!doneNow && d.status === "pending") rec.status = "in_progress"; }
-      if (t) { const { error } = await sb.from("employee_tasks").update(rec).eq("id", t.id); if (error) throw error; if (file && t.file_path) await sb.storage.from(BUCKET).remove([t.file_path]); }
+      if (t) { const { error } = await sb.from("employee_tasks").update(rec).eq("id", t.id); if (error) throw error; if (file && t.file_path) await sb.storage.from(BUCKET).remove([t.file_path]); if (rec.form_data && doneNow) await sb.rpc("apply_task_form", { p_task: t.id }); }
       else { if (!d.label.trim()) throw new Error("Task name is required."); const { error } = await sb.from("employee_tasks").insert({ ...rec, org_id: S.org.id, employee_id: e.id, task_key: "custom", label: d.label.trim(), description: d.description.trim() || null, sort_order: 900 }); if (error) throw error; }
       await log("employee", e.id, "task_updated", { name: empName(e), task: t?.label || d.label }); m.close(); toast("Saved"); render();
     }); };
@@ -1054,7 +1072,7 @@
     const d = a.detail || {};
     if (a.entity_type === "job_order" || a.entity_type === "candidate") return actText(a);
     if (a.entity_type === "document") return `${a.action} document${d.title ? ` "${d.title}"` : ""}`;
-    if (a.entity_type === "employee") { if (a.action.startsWith("status_")) return `set ${d.name} to ${EMP_STATUS[a.action.slice(7)] || a.action.slice(7)}`; if (a.action === "task_signed") return `signed "${d.task}" for ${d.name} (${d.signer})`; if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
+    if (a.entity_type === "employee") { if (a.action === "workflow_started") return `started ${d.workflow} for ${d.name}`; if (a.action.startsWith("status_")) return `set ${d.name} to ${EMP_STATUS[a.action.slice(7)] || a.action.slice(7)}`; if (a.action === "task_signed") return `signed "${d.task}" for ${d.name} (${d.signer})`; if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
     if (a.entity_type === "membership") return a.action === "invited" ? `invited ${d.email} as ${d.role}` : `${a.action} ${d.email || "a user"}`;
     if (a.entity_type === "request") return `sent a request: "${d.subject}"`;
     return `${a.action} ${a.entity_type}`;
@@ -1081,6 +1099,7 @@
       const a = $("#askchange"); if (a) a.onclick = () => requestModal();
       $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openFile(b.dataset.open));
       $("#main").querySelectorAll("[data-sign]").forEach((b) => b.onclick = () => signModal(e, (tasks || []).find((t) => t.id === b.dataset.sign)));
+      $("#main").querySelectorAll("[data-selftask]").forEach((b) => b.onclick = () => selfTaskModal(e, (tasks || []).find((t) => t.id === b.dataset.selftask)));
     };
     return `
       <div class="hero"><div class="eyebrow">${EMP_STATUS[e.status]}</div><h1>${esc(empName(e))}</h1><p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ") || "Your employee profile."}</p></div>
@@ -1088,9 +1107,10 @@
         <div class="card"><h3>Personal</h3>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}<p class="small muted" style="margin:10px 0 0">Need something corrected? <a href="#" id="askchange">Ask JHM</a>.</p></div>
         <div class="card"><h3>Contact</h3>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
         <div class="card"><h3>Employment</h3>${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}</div>
-        <div class="card" style="grid-column:1/-1"><h3>Onboarding <span class="pill ${done === (tasks || []).length ? "ok" : "on"}">${done}/${(tasks || []).length}</span></h3>
+        <div class="card" style="grid-column:1/-1"><h3>Your tasks <span class="pill ${done === (tasks || []).length ? "ok" : "on"}">${done}/${(tasks || []).length}</span></h3>
           ${(tasks || []).map((t) => { const d = ["complete", "na"].includes(t.status); return `<div class="sub-row"><div><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.signed_at ? `<div class="small ok-text">Signed ${fmtDT(t.signed_at)}</div>` : ""}</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${t.signed_file_path ? `<button class="btn sm quiet" data-open="${t.signed_file_path}">Signed copy</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 Review</button>` : ""}${t.requires_signature && !t.signed_at && t.template_doc ? `<button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : `<span class="pill ${d ? "ok" : t.status === "in_progress" ? "on" : ""}">${TASK_STATUS[t.status]}</span>`}</div></div>`; }).join("") || `<p class="small muted">No items.</p>`}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${t.signed_file_path ? `<button class="btn sm quiet" data-open="${t.signed_file_path}">Signed copy</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 Review</button>` : ""}
+              ${d ? `<span class="pill ok">${TASK_STATUS[t.status]}</span>` : t.assignee === "employee" ? (t.requires_signature && t.template_doc && t.step_type !== "form" ? `<button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : `<button class="btn sm" data-selftask="${t.id}">${t.step_type === "form" ? "Fill in" : t.step_type === "upload" ? "Upload" : t.step_type === "review" ? "Mark reviewed" : "Complete"}</button>`) : `<span class="pill ${t.status === "in_progress" ? "on" : ""}">${t.assignee === "manager" ? "With your manager" : "With HR"}</span>`}</div></div>`; }).join("") || `<p class="small muted">No items.</p>`}</div>
         <div class="card"><div class="card-head"><h3>Emergency contacts</h3><button class="btn sm quiet" id="addcontact">＋ Add</button></div>
           ${(contacts || []).length ? contacts.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b> ${c.is_primary ? '<span class="pill on">Primary</span>' : ""}<div class="small muted">${[c.relationship, c.phone, c.email].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editcontact="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Add someone we can reach in an emergency.</p>`}</div>
         <div class="card"><div class="card-head"><h3>Dependents</h3><button class="btn sm quiet" id="adddep">＋ Add</button></div>
@@ -1128,6 +1148,52 @@
       ${P.length ? `<div class="card oc-wrap"><ul class="oc">${roots.map((r) => node(r)).join("")}</ul></div>` : `<div class="empty"><h3>No one here yet</h3><p>${canOpen ? "Add employees and set their managers — the chart draws itself." : "Your company hasn't added employees yet."}</p></div>`}
       <div class="page-head" style="margin-top:28px"><div><h2>Directory</h2></div><input class="search" id="dirsearch" type="text" placeholder="Search name, title, department, email…" value="${esc(dirSearch)}" /></div>
       <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Work email</th><th>Reports to</th></tr></thead><tbody id="dirrows">${dirRows()}</tbody></table></div>`;
+  }
+
+  // ------------------------------------------------------------ FORMS (render / read)
+  function renderForm(schema, data) {
+    return (schema || []).map((f) => {
+      const v = data[f.key] ?? ""; const req = f.required ? " *" : "";
+      if (f.type === "textarea") return `<label>${esc(f.label)}${req}</label><textarea data-f="${f.key}">${esc(v)}</textarea>`;
+      if (f.type === "date") return `<label>${esc(f.label)}${req}</label><input type="date" data-f="${f.key}" value="${esc(v)}" />`;
+      if (f.type === "number") return `<label>${esc(f.label)}${req}</label><input type="number" data-f="${f.key}" value="${esc(v)}" />`;
+      if (f.type === "yesno") return `<label>${esc(f.label)}${req}</label><select data-f="${f.key}"><option value="">—</option><option ${v === "Yes" ? "selected" : ""}>Yes</option><option ${v === "No" ? "selected" : ""}>No</option></select>`;
+      if (f.type === "select") return `<label>${esc(f.label)}${req}</label><select data-f="${f.key}"><option value="">—</option>${(f.options || []).map((o) => `<option ${v === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+      return `<label>${esc(f.label)}${req}</label><input type="text" data-f="${f.key}" value="${esc(v)}" />`;
+    }).join("");
+  }
+  function readForm(root, schema, enforceRequired) {
+    const out = {};
+    for (const f of schema || []) { const el = root.querySelector(`[data-f="${f.key}"]`); const v = el ? el.value.trim() : ""; out[f.key] = v; if (enforceRequired && f.required && !v) throw new Error(`"${f.label}" is required to complete this form.`); }
+    return out;
+  }
+
+  // ------------------------------------------------------------ SELF-SERVICE TASK (employee completes own step)
+  function selfTaskModal(e, t) {
+    const m = modal(`<div class="modal-head"><h3>${esc(t.label)}</h3><button class="x" data-close>×</button></div>
+      ${t.description ? `<p class="muted">${esc(t.description)}</p>` : ""}
+      ${t.template_doc ? `<div class="signbox"><button type="button" class="btn sm ghost" id="opentpl">📄 Open ${esc(t.template_doc.title)}</button></div>` : ""}
+      <form id="f" novalidate>
+        ${t.step_type === "form" && t.form_schema ? `<div class="formbox">${renderForm(t.form_schema, t.form_data || {})}</div>` : ""}
+        ${t.step_type === "upload" ? `<label>Your completed file *</label><input type="file" name="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />` : ""}
+        ${t.step_type === "review" ? `<label class="check"><input type="checkbox" name="ack" /> I have read and understood this document.</label>` : ""}
+        <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${t.requires_signature && t.step_type === "form" ? "Save and sign" : "Complete"}</button></div></form>`, { wide: t.step_type === "form" });
+    const ot = m.el.querySelector("#opentpl"); if (ot) ot.onclick = () => openFile(t.template_doc.file_path);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const when = new Date().toISOString(); const rec = {};
+      if (t.step_type === "form") { rec.form_data = readForm(m.el, t.form_schema, true); }
+      if (t.step_type === "review" && !f.ack.checked) throw new Error("Please confirm you've read the document.");
+      if (t.step_type === "upload") { const file = f.file.files[0]; if (!file) throw new Error("Choose a file to upload."); const path = `${S.org.id}/employees/${e.id}/uploads/${crypto.randomUUID()}-${safeName(file.name)}`; const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined }); if (error) throw error; rec.file_path = path; rec.file_name = file.name; }
+      const needsSign = t.requires_signature && t.step_type === "form";
+      Object.assign(rec, needsSign ? { status: "in_progress" } : { status: "complete", completed_at: when, completed_by: S.session.user.id });
+      const { error } = await sb.from("employee_tasks").update(rec).eq("id", t.id); if (error) throw error;
+      if (rec.form_data) await sb.rpc("apply_task_form", { p_task: t.id });
+      await log("employee", e.id, needsSign ? "task_updated" : "task_complete", { name: `${e.first_name} ${e.last_name}`, task: t.label });
+      m.close();
+      if (needsSign) { if (t.template_doc) signModal(e, { ...t, ...rec }); else { await sb.from("employee_tasks").update({ status: "complete", completed_at: when, completed_by: S.session.user.id }).eq("id", t.id); render(); } }
+      else { toast("Done"); render(); }
+    }); };
   }
 
   // ------------------------------------------------------------ E-SIGNATURE
@@ -1207,21 +1273,21 @@
     return `
       <div class="page-head"><div><h1>Tasks</h1><p>Onboarding and compliance items across every employee.</p></div></div>
       <div class="filters">${[["overdue", "Overdue"], ["soon", "Due this week"], ["open", "All open"], ["done", "Completed"], ["all", "Everything"]].map(([k, v]) => `<button class="chip ${taskFilter === k ? "active" : ""} ${k === "overdue" && groups.overdue.length ? "alert" : ""}" data-c="${k}">${v} (${groups[k].length})</button>`).join("")}</div>
-      ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Task</th><th>Employee</th><th>Due</th><th>File</th><th>Status</th></tr></thead><tbody>
-        ${list.map((t) => { const e = t.employees || {}; const late = isOpen(t) && t.due_date && t.due_date < t0; return `<tr class="clickable" data-task="${t.id}"><td><b>${esc(t.label)}</b>${t.notes ? `<div class="small muted">${esc(t.notes)}</div>` : ""}</td><td><a href="#employees/${t.employee_id}" onclick="event.stopPropagation()">${esc((e.preferred_name || e.first_name || "") + " " + (e.last_name || ""))}</a></td><td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "") + fmtDate(t.due_date) : "—"}</td><td>${t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄</button>` : '<span class="small muted">—</span>'}</td><td><span class="pill ${t.status === "complete" ? "ok" : t.status === "in_progress" ? "on" : t.status === "na" ? "" : "warn"}">${TASK_STATUS[t.status]}</span></td></tr>`; }).join("")}
+      ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Task</th><th>Employee</th><th>Assigned</th><th>Due</th><th>File</th><th>Status</th></tr></thead><tbody>
+        ${list.map((t) => { const e = t.employees || {}; const late = isOpen(t) && t.due_date && t.due_date < t0; return `<tr class="clickable" data-task="${t.id}"><td><b>${esc(t.label)}</b>${t.notes ? `<div class="small muted">${esc(t.notes)}</div>` : ""}</td><td><a href="#employees/${t.employee_id}" onclick="event.stopPropagation()">${esc((e.preferred_name || e.first_name || "") + " " + (e.last_name || ""))}</a></td><td class="small muted">${ASSIGNEES[t.assignee] || "HR"}</td><td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "") + fmtDate(t.due_date) : "—"}</td><td>${t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄</button>` : '<span class="small muted">—</span>'}</td><td><span class="pill ${t.status === "complete" ? "ok" : t.status === "in_progress" ? "on" : t.status === "na" ? "" : "warn"}">${TASK_STATUS[t.status]}</span></td></tr>`; }).join("")}
       </tbody></table></div>` : `<div class="empty"><h3>Nothing here</h3><p>${taskFilter === "overdue" ? "No overdue tasks — nice." : "No tasks match this filter."}</p></div>`}`;
   }
 
   // ------------------------------------------------------------ SETTINGS (tabbed)
-  async function viewSettings(tab) {
+  async function viewSettings(tab, arg2) {
     const tabs = [];
     if (S.org && isAdmin()) tabs.push({ k: "company", t: "Company", d: "Name, logo, accent colour" });
-    if (S.org && isStaff() && mods().employees) tabs.push({ k: "onboarding", t: "Onboarding checklist", d: "Tasks, documents, signatures" });
+    if (S.org && isStaff() && mods().employees) tabs.push({ k: "workflows", t: "Forms & workflows", d: "Onboarding, offboarding, reviews…" });
     if (S.org && isAdmin()) tabs.push({ k: "access", t: "People & access", d: "Users, roles, invitations" });
     tabs.push({ k: "account", t: "Your account", d: "Name, password" });
     tabs.push({ k: "roles", t: "Roles", d: "Who sees what" });
     if (isRealSuper()) tabs.push({ k: "portal", t: "Portal", d: "Clients, modules" });
-    const cur = tabs.find((x) => x.k === tab) ? tab : tabs[0].k;
+    const cur = tabs.find((x) => x.k === tab) ? tab : (tab === "workflow" && tabs.some((x) => x.k === "workflows") ? "workflow" : tabs[0].k);
     let body = "", hook = () => {};
 
     if (cur === "company") {
@@ -1243,25 +1309,18 @@
       };
     }
 
-    if (cur === "onboarding") {
-      await sb.rpc("ensure_task_templates", { p_org: S.org.id });
-      const [{ data: tpls }, { data: docs }] = await Promise.all([sb.from("task_templates").select("*").eq("org_id", S.org.id).order("sort_order"), sb.from("documents").select("id,title,category").eq("org_id", S.org.id).order("title")]);
-      const docOpts = (sel) => `<option value="">— no document —</option>${(docs || []).map((d) => `<option value="${d.id}" ${sel === d.id ? "selected" : ""}>${esc(d.title)}</option>`).join("")}`;
-      body = `<div class="card"><h3>Onboarding checklist</h3><p class="small muted">Every new employee receives these tasks. Attach the document behind each one (upload it under <a href="#docs">Documents</a> first) and tick <b>Sign</b> where a signature is required. Changes apply to employees added from now on.</p>
-        <div style="overflow:auto"><table class="tpl"><thead><tr><th style="width:36px">On</th><th>Task</th><th>Document</th><th style="text-align:center">Sign</th><th>Due</th><th></th></tr></thead><tbody>
-        ${(tpls || []).map((t) => `<tr data-tpl="${t.id}"><td><input type="checkbox" class="en" ${t.enabled ? "checked" : ""} title="Enabled" /></td><td><input type="text" class="lbl" value="${esc(t.label)}" /><input type="text" class="desc small" value="${esc(t.description || "")}" placeholder="Short description" style="margin-top:4px" /></td><td><select class="doc">${docOpts(t.document_id)}</select></td><td style="text-align:center"><input type="checkbox" class="sig" ${t.requires_signature ? "checked" : ""} /></td><td><select class="due"><option value="start" ${t.due_rule === "start" ? "selected" : ""}>Start date</option><option value="start+3bd" ${t.due_rule === "start+3bd" ? "selected" : ""}>Start + 3 business days</option><option value="hire+20" ${t.due_rule === "hire+20" ? "selected" : ""}>Hire + 20 days</option><option value="none" ${t.due_rule === "none" ? "selected" : ""}>No due date</option></select></td><td>${t.task_key.startsWith("custom_") ? `<button class="btn sm danger deltpl">Delete</button>` : ""}</td></tr>`).join("")}
-        </tbody></table></div>
-        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center"><button class="btn quiet sm" id="addtpl">＋ Add task</button><span class="spacer"></span><button class="btn" id="savetpl">Save checklist</button></div></div>`;
+    if (cur === "workflows") {
+      await sb.rpc("ensure_workflows", { p_org: S.org.id });
+      const [{ data: wfs }, { data: steps }] = await Promise.all([sb.from("workflows").select("*").eq("org_id", S.org.id).order("sort_order"), sb.from("workflow_steps").select("id,workflow_id,step_type").eq("org_id", S.org.id)]);
+      const TRIG = { manual: "Started manually", on_hire: "Starts when an employee is added", on_termination: "Starts when an employee is terminated" };
+      body = `<div class="card"><div class="card-head"><div><h3>Forms & workflows</h3><p class="small muted" style="margin:0">Each workflow is an ordered set of steps — documents to review or sign, forms to fill, files to upload, checklist items — assigned to HR, the manager or the employee.</p></div><button class="btn" id="newwf">＋ New workflow</button></div>
+        <div class="list" style="margin-top:12px">${(wfs || []).map((w) => { const n = (steps || []).filter((x) => x.workflow_id === w.id).length; return `<div class="row" data-wf="${w.id}" style="cursor:pointer"><div class="icon">${w.trigger === "on_hire" ? "IN" : w.trigger === "on_termination" ? "OUT" : "WF"}</div><div class="grow"><div class="title">${esc(w.name)} ${w.enabled ? "" : '<span class="pill">Off</span>'}</div><div class="meta"><span>${TRIG[w.trigger]}</span><span>${n} step${n === 1 ? "" : "s"}</span>${w.description ? `<span>${esc(w.description)}</span>` : ""}</div></div><div class="actions"><span class="btn sm quiet">Edit →</span></div></div>`; }).join("")}</div></div>`;
       hook = () => {
-        $("#savetpl").onclick = () => busy($("#savetpl"), async () => {
-          const rows = [...$("#main").querySelectorAll("tr[data-tpl]")].map((r, i) => ({ id: r.dataset.tpl, enabled: r.querySelector(".en").checked, label: r.querySelector(".lbl").value.trim() || "Task", description: r.querySelector(".desc").value.trim() || null, document_id: r.querySelector(".doc").value || null, requires_signature: r.querySelector(".sig").checked, due_rule: r.querySelector(".due").value, sort_order: (i + 1) * 10 }));
-          for (const r of rows) { const { id, ...rec } = r; const { error } = await sb.from("task_templates").update(rec).eq("id", id); if (error) throw error; }
-          toast("Checklist saved"); render();
-        });
-        $("#addtpl").onclick = () => busy($("#addtpl"), async () => { const { error } = await sb.from("task_templates").insert({ org_id: S.org.id, task_key: "custom_" + Date.now().toString(36), label: "New task", sort_order: 500, due_rule: "start" }); if (error) throw error; render(); });
-        $("#main").querySelectorAll(".deltpl").forEach((b) => b.onclick = async () => { const { error } = await sb.from("task_templates").delete().eq("id", b.closest("tr").dataset.tpl); if (error) fail(error); else render(); });
+        $("#newwf").onclick = () => wfModal();
+        $("#main").querySelectorAll("[data-wf]").forEach((r) => r.onclick = () => (location.hash = "#settings/workflow/" + r.dataset.wf));
       };
     }
+    if (cur === "workflow") { body = await wfEditor(arg2); hook = window.__wfHook || (() => {}); window.__wfHook = null; }
 
     if (cur === "access") { location.hash = "#people"; return ""; }
 
@@ -1279,7 +1338,100 @@
 
     window.__afterRender = hook;
     return `<div class="page-head"><div><h1>Settings</h1></div></div>
-      <div class="settings"><nav class="subnav">${tabs.map((x) => `<a href="#settings/${x.k}" class="${x.k === cur ? "active" : ""}"><b>${x.t}</b><span>${x.d}</span></a>`).join("")}</nav><div class="settings-body">${body}</div></div>`;
+      <div class="settings"><nav class="subnav">${tabs.map((x) => `<a href="#settings/${x.k}" class="${x.k === cur || (cur === "workflow" && x.k === "workflows") ? "active" : ""}"><b>${x.t}</b><span>${x.d}</span></a>`).join("")}</nav><div class="settings-body">${body}</div></div>`;
+  }
+
+  // ------------------------------------------------------------ START WORKFLOW
+  async function startWorkflowModal(e) {
+    await sb.rpc("ensure_workflows", { p_org: S.org.id });
+    const { data: wfs } = await sb.from("workflows").select("*").eq("org_id", S.org.id).eq("enabled", true).order("sort_order");
+    const m = modal(`<div class="modal-head"><h3>Start a workflow for ${esc(empName(e))}</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate><label>Workflow</label><select name="wf">${(wfs || []).map((w) => `<option value="${w.id}">${esc(w.name)}${w.description ? " — " + esc(w.description) : ""}</option>`).join("")}</select>
+        <label>Anchor date <span class="muted">(due dates count from here)</span></label><input type="date" name="anchor" value="${new Date().toISOString().slice(0, 10)}" />
+        <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Start</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const { error } = await sb.rpc("start_workflow", { p_workflow: f.wf.value, p_employee: e.id, p_anchor: f.anchor.value || null }); if (error) throw error;
+      await log("employee", e.id, "workflow_started", { name: empName(e), workflow: f.wf.selectedOptions[0].textContent.split(" — ")[0] }); m.close(); toast("Workflow started"); render();
+    }); };
+  }
+
+  // ------------------------------------------------------------ WORKFLOW EDITOR
+  function wfModal(w = null) {
+    const m = modal(`<div class="modal-head"><h3>${w ? "Workflow settings" : "New workflow"}</h3><button class="x" data-close>×</button></div>
+      <form id="f" novalidate><label>Name</label><input type="text" name="name" value="${esc(w?.name || "")}" placeholder="e.g. Annual review, Promotion, Leave of absence" />
+        <label>Description</label><input type="text" name="description" value="${esc(w?.description || "")}" />
+        <label>Starts</label><select name="trigger"><option value="manual" ${(w?.trigger || "manual") === "manual" ? "selected" : ""}>Manually, from an employee's profile</option><option value="on_hire" ${w?.trigger === "on_hire" ? "selected" : ""}>Automatically when an employee is added</option><option value="on_termination" ${w?.trigger === "on_termination" ? "selected" : ""}>Automatically when an employee is terminated</option></select>
+        <label class="check"><input type="checkbox" name="enabled" ${w ? (w.enabled ? "checked" : "") : "checked"} /> Enabled</label>
+        <div class="modal-foot">${w ? `<button type="button" class="btn danger" id="del">Delete workflow</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">${w ? "Save" : "Create"}</button></div></form>`);
+    const f = m.el.querySelector("#f");
+    f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
+      const d = Object.fromEntries(new FormData(f)); if (!d.name.trim()) throw new Error("Give the workflow a name.");
+      const rec = { name: d.name.trim(), description: d.description.trim() || null, trigger: d.trigger, enabled: !!d.enabled };
+      if (w) { const { error } = await sb.from("workflows").update(rec).eq("id", w.id); if (error) throw error; m.close(); render(); }
+      else { const { data, error } = await sb.from("workflows").insert({ ...rec, org_id: S.org.id, sort_order: 100 }).select().single(); if (error) throw error; m.close(); location.hash = "#settings/workflow/" + data.id; }
+    }); };
+    const del = m.el.querySelector("#del"); if (del) del.onclick = async () => { if (!(await confirmBox("Delete this workflow?", "Its steps are deleted. Tasks already started for employees are kept."))) return; const { error } = await sb.from("workflows").delete().eq("id", w.id); if (error) fail(error); m.close(); location.hash = "#settings/workflows"; };
+  }
+  async function wfEditor(id) {
+    const [{ data: w }, { data: steps }, { data: docs }] = await Promise.all([
+      sb.from("workflows").select("*").eq("id", id).single(), sb.from("workflow_steps").select("*").eq("workflow_id", id).order("sort_order"), sb.from("documents").select("id,title").eq("org_id", S.org.id).order("title")]);
+    if (!w) return `<div class="empty">Workflow not found.</div>`;
+    const docOpts = (sel) => `<option value="">— none —</option>${(docs || []).map((d) => `<option value="${d.id}" ${sel === d.id ? "selected" : ""}>${esc(d.title)}</option>`).join("")}`;
+    const anchorOpts = (sel) => Object.entries({ start: "start date", hire: "hire date", termination: "termination date", run: "day workflow starts" }).map(([k, v]) => `<option value="${k}" ${sel === k ? "selected" : ""}>${v}</option>`).join("");
+    const fieldRow = (fl = {}) => `<div class="frow"><input type="text" class="fl" value="${esc(fl.label || "")}" placeholder="Field label" /><select class="ft">${Object.entries(FIELD_TYPES).map(([k, v]) => `<option value="${k}" ${(fl.type || "text") === k ? "selected" : ""}>${v}</option>`).join("")}</select><input type="text" class="fo" value="${esc((fl.options || []).join(", "))}" placeholder="Options, comma-separated" style="${(fl.type || "text") === "select" ? "" : "visibility:hidden"}" /><label class="check" style="margin:0"><input type="checkbox" class="fr" ${fl.required ? "checked" : ""} /> Req.</label><button type="button" class="btn sm danger delf">×</button></div>`;
+    const stepCard = (st, i) => `<div class="step card" data-step="${st.id || ""}">
+      <div class="step-head"><span class="stepno">${i + 1}</span><input type="text" class="s-label" value="${esc(st.label || "")}" placeholder="Step name" /><select class="s-type">${Object.entries(STEP_TYPES).map(([k, v]) => `<option value="${k}" ${st.step_type === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+        <div class="step-tools"><button type="button" class="btn sm quiet up" title="Move up">↑</button><button type="button" class="btn sm quiet down" title="Move down">↓</button><button type="button" class="btn sm danger dels">Remove</button></div></div>
+      <input type="text" class="s-desc small" value="${esc(st.description || "")}" placeholder="Instructions shown with the step" />
+      <div class="step-grid">
+        <div class="s-docwrap"><label>Document</label><select class="s-doc">${docOpts(st.document_id)}</select></div>
+        <div><label>Assigned to</label><select class="s-asg">${Object.entries(ASSIGNEES).map(([k, v]) => `<option value="${k}" ${st.assignee === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        <div><label>Due</label><div class="dueline"><input type="number" class="s-off" value="${st.due_offset_days ?? 0}" style="width:70px" /><select class="s-bd"><option value="0" ${st.due_business_days ? "" : "selected"}>days</option><option value="1" ${st.due_business_days ? "selected" : ""}>business days</option></select><span class="small muted">after</span><select class="s-anchor">${anchorOpts(st.due_anchor || "start")}</select></div></div>
+        <div class="s-sigwrap"><label>&nbsp;</label><label class="check" style="margin:0"><input type="checkbox" class="s-sig" ${st.requires_signature ? "checked" : ""} /> Requires signature</label></div>
+      </div>
+      <div class="s-form" style="${st.step_type === "form" ? "" : "display:none"}"><label>Form fields</label><div class="fields">${(st.form_schema || []).map(fieldRow).join("")}</div><button type="button" class="btn sm quiet addf">＋ Add field</button></div>
+    </div>`;
+    window.__wfHook = () => {
+      const list = $("#steps");
+      const wire = () => {
+        list.querySelectorAll(".step").forEach((card, i) => {
+          card.querySelector(".stepno").textContent = i + 1;
+          const type = card.querySelector(".s-type"); const sync = () => { const t = type.value; card.querySelector(".s-form").style.display = t === "form" ? "" : "none"; card.querySelector(".s-docwrap").style.visibility = ["review", "sign"].includes(t) ? "" : "hidden"; const sig = card.querySelector(".s-sig"); if (t === "sign") { sig.checked = true; sig.disabled = true; } else { sig.disabled = false; } card.querySelector(".s-sigwrap").style.visibility = ["checklist"].includes(t) ? "hidden" : ""; };
+          type.onchange = sync; sync();
+          card.querySelector(".up").onclick = () => { if (card.previousElementSibling) { list.insertBefore(card, card.previousElementSibling); wire(); } };
+          card.querySelector(".down").onclick = () => { if (card.nextElementSibling) { list.insertBefore(card.nextElementSibling, card); wire(); } };
+          card.querySelector(".dels").onclick = () => { card.remove(); wire(); };
+          card.querySelector(".addf").onclick = () => { card.querySelector(".fields").insertAdjacentHTML("beforeend", fieldRow()); wire(); };
+          card.querySelectorAll(".frow").forEach((fr) => { fr.querySelector(".delf").onclick = () => fr.remove(); const ft = fr.querySelector(".ft"); ft.onchange = () => (fr.querySelector(".fo").style.visibility = ft.value === "select" ? "" : "hidden"); });
+        });
+      };
+      wire();
+      $("#addstep").onclick = () => { list.insertAdjacentHTML("beforeend", stepCard({ step_type: "checklist", assignee: "hr", due_anchor: "start", due_offset_days: 0 }, list.children.length)); wire(); list.lastElementChild.querySelector(".s-label").focus(); };
+      $("#wfsettings").onclick = () => wfModal(w);
+      $("#savewf").onclick = () => busy($("#savewf"), async () => {
+        const rows = [...list.querySelectorAll(".step")].map((card, i) => {
+          const type = card.querySelector(".s-type").value;
+          const fields = type === "form" ? [...card.querySelectorAll(".frow")].map((fr, j) => { const label = fr.querySelector(".fl").value.trim(); if (!label) return null; const ft = fr.querySelector(".ft").value; return { key: "f" + (j + 1) + "_" + label.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24), label, type: ft, required: fr.querySelector(".fr").checked, options: ft === "select" ? fr.querySelector(".fo").value.split(",").map((x) => x.trim()).filter(Boolean) : undefined }; }).filter(Boolean) : null;
+          // keep original keys for migrated built-in forms so apply_task_form still maps them
+          const orig = (steps || []).find((x) => x.id === card.dataset.step);
+          if (fields && orig?.form_schema) fields.forEach((f) => { const o = orig.form_schema.find((x) => x.label === f.label); if (o) f.key = o.key; });
+          return { id: card.dataset.step || null, org_id: S.org.id, workflow_id: w.id, label: card.querySelector(".s-label").value.trim() || "Step", description: card.querySelector(".s-desc").value.trim() || null, step_type: type,
+            document_id: ["review", "sign"].includes(type) ? (card.querySelector(".s-doc").value || null) : null, requires_signature: type === "sign" || (type !== "checklist" && card.querySelector(".s-sig").checked),
+            assignee: card.querySelector(".s-asg").value, due_offset_days: Number(card.querySelector(".s-off").value) || 0, due_business_days: card.querySelector(".s-bd").value === "1", due_anchor: card.querySelector(".s-anchor").value, form_schema: fields, sort_order: (i + 1) * 10 };
+        });
+        const keep = rows.filter((r) => r.id).map((r) => r.id);
+        const gone = (steps || []).filter((x) => !keep.includes(x.id)).map((x) => x.id);
+        if (gone.length) { const { error } = await sb.from("workflow_steps").delete().in("id", gone); if (error) throw error; }
+        for (const r of rows) { const { id, ...rec } = r; const q = id ? sb.from("workflow_steps").update(rec).eq("id", id) : sb.from("workflow_steps").insert(rec); const { error } = await q; if (error) throw error; }
+        toast("Workflow saved"); render();
+      });
+    };
+    const TRIG = { manual: "Started manually from an employee's profile", on_hire: "Starts automatically when an employee is added", on_termination: "Starts automatically when an employee is terminated" };
+    return `<div class="card-head" style="margin-bottom:12px"><div><a href="#settings/workflows" class="small">← All workflows</a><h2 style="margin-top:4px">${esc(w.name)} ${w.enabled ? "" : '<span class="pill">Off</span>'}</h2><div class="small muted">${TRIG[w.trigger]}${w.description ? " · " + esc(w.description) : ""}</div></div><div style="display:flex;gap:8px"><button class="btn quiet sm" id="wfsettings">Settings</button><button class="btn" id="savewf">Save workflow</button></div></div>
+      <div id="steps" class="steps">${(steps || []).map(stepCard).join("")}</div>
+      <div style="display:flex;gap:8px;margin-top:12px"><button class="btn quiet" id="addstep">＋ Add step</button></div>
+      <p class="small muted" style="margin-top:14px">Changes apply to workflows started from now on. Upload documents under <a href="#docs">Documents</a> to make them selectable here.</p>`;
   }
 
   // ------------------------------------------------------------ GLOBAL SEARCH (⌘K)
@@ -1290,6 +1442,7 @@
       { t: "Ask JHM", k: "help question contact support requests", go: () => (location.hash = "#requests") },
       { t: "New question for JHM", k: "ask help request send", go: () => requestModal() },
       { t: "Settings", k: "profile password account company logo color", go: () => (location.hash = "#settings") },
+      ...(isStaff() ? [{ t: "Forms & workflows", k: "onboarding offboarding checklist template steps builder", go: () => (location.hash = "#settings/workflows") }] : []),
     ];
     const M = mods();
     if (!isStaff() && M.employees) c.push({ t: "My profile", k: "me record emergency contact dependents", go: () => (location.hash = "#me") });
