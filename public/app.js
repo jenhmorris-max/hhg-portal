@@ -278,7 +278,7 @@
       else if (route === "admin" && isRealSuper()) html = await viewAdmin();
       else if (route === "requests" && (!S.org || M.requests)) html = await viewRequests();
       else if (route === "tasks" && isStaff() && M.tasks) html = await viewTasks();
-      else if (route === "settings") html = await viewSettings();
+      else if (route === "settings") html = await viewSettings(arg);
       else if (route === "home") html = await viewHome();
       else if (M.documents || !S.org) html = await viewDocs();
       else html = await viewHome();
@@ -1206,61 +1206,74 @@
       </tbody></table></div>` : `<div class="empty"><h3>Nothing here</h3><p>${taskFilter === "overdue" ? "No overdue tasks — nice." : "No tasks match this filter."}</p></div>`}`;
   }
 
-  // ------------------------------------------------------------ SETTINGS
-  async function viewSettings() {
-    window.__afterRender = () => {
-      const f = $("#pf"); f.onsubmit = (e) => { e.preventDefault(); busy(f.querySelector("button"), async () => {
-        const { error } = await sb.from("profiles").update({ full_name: f.full_name.value.trim() }).eq("id", S.session.user.id); if (error) throw error;
-        S.profile.full_name = f.full_name.value.trim(); toast("Saved"); render(); }); };
-      const p = $("#pw"); p.onsubmit = (e) => { e.preventDefault(); busy(p.querySelector("button"), async () => {
-        if (p.password.value.length < 10) throw new Error("Use at least 10 characters.");
-        const { error } = await sb.auth.updateUser({ password: p.password.value }); if (error) throw error; p.reset(); toast("Password changed"); }); };
-      const c = $("#cf"); if (c) c.onsubmit = (e) => { e.preventDefault(); busy(c.querySelector("#csave"), async () => {
-        const rec = { name: c.cname.value.trim(), accent: /^#[0-9a-fA-F]{6}$/.test(c.accent.value.trim()) ? c.accent.value.trim() : S.org.accent };
-        if (!rec.name) throw new Error("Company name is required.");
-        const logo = c.logo.files[0];
-        if (logo) { const path = `${S.org.id}/branding/logo-${Date.now()}.${logo.name.split(".").pop()}`; const { error } = await sb.storage.from(BUCKET).upload(path, logo, { contentType: logo.type }); if (error) throw error; rec.logo_path = path; if (S.org.logo_path) await sb.storage.from(BUCKET).remove([S.org.logo_path]); }
-        const { error } = await sb.from("organizations").update(rec).eq("id", S.org.id); if (error) throw error;
-        const keep = S.org.id; await loadContext(); S.org = S.orgs.find((o) => o.id === keep) || S.org; S.role = S.org.role; if (S.org.logo_path) { try { S.logoUrl = await signedUrl(S.org.logo_path, 3600); } catch {} }
-        toast("Company settings saved"); render(); }); };
-      const ac = $("#accent"); const sw = $("#swatch"); if (ac && sw) ac.oninput = () => (sw.style.background = ac.value);
-    };
-    let tplCard = "";
-    if (S.org && isStaff() && mods().employees) {
+  // ------------------------------------------------------------ SETTINGS (tabbed)
+  async function viewSettings(tab) {
+    const tabs = [];
+    if (S.org && isAdmin()) tabs.push({ k: "company", t: "Company", d: "Name, logo, accent colour" });
+    if (S.org && isStaff() && mods().employees) tabs.push({ k: "onboarding", t: "Onboarding checklist", d: "Tasks, documents, signatures" });
+    if (S.org && isAdmin()) tabs.push({ k: "access", t: "People & access", d: "Users, roles, invitations" });
+    tabs.push({ k: "account", t: "Your account", d: "Name, password" });
+    tabs.push({ k: "roles", t: "Roles", d: "Who sees what" });
+    if (isRealSuper()) tabs.push({ k: "portal", t: "Portal", d: "Clients, modules" });
+    const cur = tabs.find((x) => x.k === tab) ? tab : tabs[0].k;
+    let body = "", hook = () => {};
+
+    if (cur === "company") {
+      body = `<div class="card"><h3>Company</h3><p class="small muted">How ${esc(S.org.name)}'s workspace looks to everyone who signs in.</p>
+        <form id="cf" novalidate><label>Company name</label><input type="text" name="cname" value="${esc(S.org.name)}" />
+          <label>Logo</label>${S.logoUrl ? `<div class="ws-logo" style="max-width:260px;border:1px solid var(--line);margin-bottom:8px"><img src="${S.logoUrl}" alt="" /></div>` : ""}<input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" /><div class="small muted" style="margin-top:4px">PNG or SVG with a transparent background looks best. Wide wordmarks are fine.</div>
+          <label>Accent colour</label><div style="display:flex;gap:10px;align-items:center"><span id="swatch" style="width:36px;height:36px;border-radius:10px;background:${esc(S.org.accent || "#17191f")};border:1px solid var(--line);flex-shrink:0"></span><input type="text" id="accent" name="accent" value="${esc(S.org.accent || "#17191f")}" style="max-width:140px" /><span class="small muted">Used for the company monogram.</span></div>
+          <div class="modal-foot" style="justify-content:flex-start"><button class="btn" id="csave">Save</button></div></form></div>`;
+      hook = () => {
+        const c = $("#cf"); c.onsubmit = (e) => { e.preventDefault(); busy($("#csave"), async () => {
+          const rec = { name: c.cname.value.trim(), accent: /^#[0-9a-fA-F]{6}$/.test(c.accent.value.trim()) ? c.accent.value.trim() : S.org.accent };
+          if (!rec.name) throw new Error("Company name is required.");
+          const logo = c.logo.files[0];
+          if (logo) { const path = `${S.org.id}/branding/logo-${Date.now()}.${logo.name.split(".").pop()}`; const { error } = await sb.storage.from(BUCKET).upload(path, logo, { contentType: logo.type }); if (error) throw error; rec.logo_path = path; if (S.org.logo_path) await sb.storage.from(BUCKET).remove([S.org.logo_path]); }
+          const { error } = await sb.from("organizations").update(rec).eq("id", S.org.id); if (error) throw error;
+          const keep = S.org.id; await loadContext(); S.org = S.orgs.find((o) => o.id === keep) || S.org; S.role = S.org.role; S.logoUrl = null; if (S.org.logo_path) { try { S.logoUrl = await signedUrl(S.org.logo_path, 3600); } catch {} }
+          toast("Company settings saved"); render(); }); };
+        const ac = $("#accent"), sw = $("#swatch"); ac.oninput = () => (sw.style.background = ac.value);
+      };
+    }
+
+    if (cur === "onboarding") {
       await sb.rpc("ensure_task_templates", { p_org: S.org.id });
       const [{ data: tpls }, { data: docs }] = await Promise.all([sb.from("task_templates").select("*").eq("org_id", S.org.id).order("sort_order"), sb.from("documents").select("id,title,category").eq("org_id", S.org.id).order("title")]);
       const docOpts = (sel) => `<option value="">— no document —</option>${(docs || []).map((d) => `<option value="${d.id}" ${sel === d.id ? "selected" : ""}>${esc(d.title)}</option>`).join("")}`;
-      tplCard = `<div class="card" style="grid-column:1/-1"><h3>Onboarding checklist</h3><p class="small muted">Every new employee gets these tasks. Attach the document that backs each one (upload it under Documents first) and tick <b>Sign</b> where a signature is required. Changes apply to employees added from now on.</p>
-        <div style="overflow:auto"><table class="tpl"><thead><tr><th style="width:36px"></th><th>Task</th><th>Document</th><th>Sign</th><th>Due</th><th></th></tr></thead><tbody>
+      body = `<div class="card"><h3>Onboarding checklist</h3><p class="small muted">Every new employee receives these tasks. Attach the document behind each one (upload it under <a href="#docs">Documents</a> first) and tick <b>Sign</b> where a signature is required. Changes apply to employees added from now on.</p>
+        <div style="overflow:auto"><table class="tpl"><thead><tr><th style="width:36px">On</th><th>Task</th><th>Document</th><th style="text-align:center">Sign</th><th>Due</th><th></th></tr></thead><tbody>
         ${(tpls || []).map((t) => `<tr data-tpl="${t.id}"><td><input type="checkbox" class="en" ${t.enabled ? "checked" : ""} title="Enabled" /></td><td><input type="text" class="lbl" value="${esc(t.label)}" /><input type="text" class="desc small" value="${esc(t.description || "")}" placeholder="Short description" style="margin-top:4px" /></td><td><select class="doc">${docOpts(t.document_id)}</select></td><td style="text-align:center"><input type="checkbox" class="sig" ${t.requires_signature ? "checked" : ""} /></td><td><select class="due"><option value="start" ${t.due_rule === "start" ? "selected" : ""}>Start date</option><option value="start+3bd" ${t.due_rule === "start+3bd" ? "selected" : ""}>Start + 3 business days</option><option value="hire+20" ${t.due_rule === "hire+20" ? "selected" : ""}>Hire + 20 days</option><option value="none" ${t.due_rule === "none" ? "selected" : ""}>No due date</option></select></td><td>${t.task_key.startsWith("custom_") ? `<button class="btn sm danger deltpl">Delete</button>` : ""}</td></tr>`).join("")}
         </tbody></table></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn quiet sm" id="addtpl">＋ Add task to checklist</button><span class="spacer"></span><button class="btn" id="savetpl">Save checklist</button></div></div>`;
-      const prevHook = window.__afterRender;
-      window.__afterRender = () => {
-        prevHook && prevHook();
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center"><button class="btn quiet sm" id="addtpl">＋ Add task</button><span class="spacer"></span><button class="btn" id="savetpl">Save checklist</button></div></div>`;
+      hook = () => {
         $("#savetpl").onclick = () => busy($("#savetpl"), async () => {
           const rows = [...$("#main").querySelectorAll("tr[data-tpl]")].map((r, i) => ({ id: r.dataset.tpl, enabled: r.querySelector(".en").checked, label: r.querySelector(".lbl").value.trim() || "Task", description: r.querySelector(".desc").value.trim() || null, document_id: r.querySelector(".doc").value || null, requires_signature: r.querySelector(".sig").checked, due_rule: r.querySelector(".due").value, sort_order: (i + 1) * 10 }));
           for (const r of rows) { const { id, ...rec } = r; const { error } = await sb.from("task_templates").update(rec).eq("id", id); if (error) throw error; }
           toast("Checklist saved"); render();
         });
-        $("#addtpl").onclick = () => busy($("#addtpl"), async () => {
-          const { error } = await sb.from("task_templates").insert({ org_id: S.org.id, task_key: "custom_" + Date.now().toString(36), label: "New task", sort_order: 500, due_rule: "start" }); if (error) throw error; render();
-        });
-        $("#main").querySelectorAll(".deltpl").forEach((b) => b.onclick = async () => { const id = b.closest("tr").dataset.tpl; const { error } = await sb.from("task_templates").delete().eq("id", id); if (error) fail(error); else render(); });
+        $("#addtpl").onclick = () => busy($("#addtpl"), async () => { const { error } = await sb.from("task_templates").insert({ org_id: S.org.id, task_key: "custom_" + Date.now().toString(36), label: "New task", sort_order: 500, due_rule: "start" }); if (error) throw error; render(); });
+        $("#main").querySelectorAll(".deltpl").forEach((b) => b.onclick = async () => { const { error } = await sb.from("task_templates").delete().eq("id", b.closest("tr").dataset.tpl); if (error) fail(error); else render(); });
       };
     }
-    const company = S.org && isAdmin() ? `<div class="card"><h3>Company</h3><p class="small muted">How ${esc(S.org.name)}'s workspace looks to everyone who signs in.</p>
-        <form id="cf" novalidate><label>Company name</label><input type="text" name="cname" value="${esc(S.org.name)}" />
-          <label>Logo ${S.logoUrl ? `<span class="muted">(current shown below)</span>` : ""}</label>${S.logoUrl ? `<div class="ws-logo" style="max-width:240px;border:1px solid var(--line)"><img src="${S.logoUrl}" alt="" /></div>` : ""}<input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
-          <label>Accent color</label><div style="display:flex;gap:10px;align-items:center"><span id="swatch" style="width:34px;height:34px;border-radius:9px;background:${esc(S.org.accent || "#23305a")};border:1px solid var(--line);flex-shrink:0"></span><input type="text" id="accent" name="accent" value="${esc(S.org.accent || "#23305a")}" style="max-width:140px" /></div>
-          <button class="btn block" id="csave">Save company settings</button></form></div>` : "";
-    return `<div class="page-head"><div><div class="eyebrow">${S.org ? esc(S.org.name) : "JHM Consulting"}</div><h1>Settings</h1></div></div>
-      <div class="two" style="align-items:start">${company}
-      <div class="card"><h3>Your profile</h3><form id="pf"><label>Full name</label><input type="text" name="full_name" value="${esc(S.profile.full_name || "")}" /><label>Email</label><input type="email" value="${esc(S.profile.email)}" disabled /><label>Role</label><input type="text" value="${roleLabel(S.role)}${S.org ? " · " + esc(S.org.name) : ""}" disabled /><button class="btn block">Save</button></form></div>
-      <div class="card"><h3>Password</h3><form id="pw"><label>New password <span class="muted">(10+ characters)</span></label><input type="password" name="password" minlength="10" required autocomplete="new-password" /><button class="btn block">Update password</button></form></div>
-      ${isRealSuper() ? `<div class="card"><h3>Portal administration</h3><p class="small muted">Client workspaces, logos, modules and access are managed from the Clients screen.</p><a class="btn quiet" href="#admin">Go to Clients →</a></div>` : ""}</div>
-      ${tplCard ? `<div style="margin-top:14px">${tplCard}</div>` : ""}
-      <div style="margin-top:18px">${rolesExplainer()}</div>`;
+
+    if (cur === "access") { location.hash = "#people"; return ""; }
+
+    if (cur === "account") {
+      body = `<div class="two" style="align-items:start"><div class="card"><h3>Your profile</h3><form id="pf"><label>Full name</label><input type="text" name="full_name" value="${esc(S.profile.full_name || "")}" /><label>Email</label><input type="email" value="${esc(S.profile.email)}" disabled /><label>Role</label><input type="text" value="${roleLabel(S.role)}${S.org ? " · " + esc(S.org.name) : ""}" disabled /><div class="modal-foot" style="justify-content:flex-start"><button class="btn">Save</button></div></form></div>
+        <div class="card"><h3>Password</h3><form id="pw"><label>New password <span class="muted">(10+ characters)</span></label><input type="password" name="password" minlength="10" required autocomplete="new-password" /><div class="modal-foot" style="justify-content:flex-start"><button class="btn">Update password</button></div></form></div></div>`;
+      hook = () => {
+        const f = $("#pf"); f.onsubmit = (e) => { e.preventDefault(); busy(f.querySelector("button"), async () => { const { error } = await sb.from("profiles").update({ full_name: f.full_name.value.trim() }).eq("id", S.session.user.id); if (error) throw error; S.profile.full_name = f.full_name.value.trim(); toast("Saved"); render(); }); };
+        const p = $("#pw"); p.onsubmit = (e) => { e.preventDefault(); busy(p.querySelector("button"), async () => { if (p.password.value.length < 10) throw new Error("Use at least 10 characters."); const { error } = await sb.auth.updateUser({ password: p.password.value }); if (error) throw error; p.reset(); toast("Password changed"); }); };
+      };
+    }
+
+    if (cur === "roles") body = rolesExplainer();
+    if (cur === "portal") body = `<div class="card"><h3>Portal administration</h3><p class="small muted">Client workspaces, logos, modules and access are managed from the Clients screen.</p><a class="btn quiet" href="#admin">Go to Clients →</a></div>`;
+
+    window.__afterRender = hook;
+    return `<div class="page-head"><div>${S.org ? `<div class="eyebrow">${esc(S.org.name)}</div>` : ""}<h1>Settings</h1></div></div>
+      <div class="settings"><nav class="subnav">${tabs.map((x) => `<a href="#settings/${x.k}" class="${x.k === cur ? "active" : ""}"><b>${x.t}</b><span>${x.d}</span></a>`).join("")}</nav><div class="settings-body">${body}</div></div>`;
   }
 
   // ------------------------------------------------------------ GLOBAL SEARCH (⌘K)

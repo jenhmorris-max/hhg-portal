@@ -299,3 +299,12 @@ table.tpl td { vertical-align: top; }
 .status-select.active { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
 .status-select.onboarding { color: var(--brass-ink); border-color: #c9d8f7; background: var(--brass-soft); }
 .status-select.terminated { color: var(--warn); background: var(--warn-soft); }
+
+/* settings */
+.settings { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; }
+.subnav { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 76px; }
+.subnav a { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 10px; text-decoration: none; color: var(--ink-2); border: 1px solid transparent; }
+.subnav a b { font-size: 14px; color: var(--ink); } .subnav a span { font-size: 12px; color: var(--ink-3); }
+.subnav a:hover { background: #fff; border-color: var(--line); }
+.subnav a.active { background: #fff; border-color: var(--line); box-shadow: var(--shadow); } .subnav a.active b { color: var(--brass-ink); }
+@media (max-width: 900px) { .settings { grid-template-columns: 1fr; } .subnav { position: static; flex-direction: row; overflow-x: auto; } .subnav a span { display: none; } }
