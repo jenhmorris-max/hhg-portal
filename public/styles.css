@@ -281,3 +281,15 @@ select.complete, select.na { color: var(--ok); } select.in_progress { color: var
 /* in a workspace the logo lives in the sidebar; the top bar shows it only on phones (where the sidebar is hidden) */
 .shell.in-ws .brand .logo { display: none; }
 @media (max-width: 760px) { .shell.in-ws .brand .logo { display: grid; } .shell.in-ws .brand .logo.wide { display: block; } }
+
+/* signing */
+.signbox { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 14px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); margin: 10px 0 4px; }
+.padwrap { position: relative; border: 1px dashed var(--line-2); border-radius: var(--radius-sm); background: #fff; }
+.padwrap canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; border-radius: var(--radius-sm); }
+.padwrap .btn { position: absolute; right: 8px; top: 8px; }
+table.tpl input[type=text], table.tpl select { padding: 7px 9px; font-size: 13px; }
+table.tpl td { vertical-align: top; }
+
+.navtoggle { background: none; border: 1px solid transparent; border-radius: 9px; width: 36px; height: 36px; font-size: 18px; color: var(--ink-2); cursor: pointer; margin-right: 2px; }
+.navtoggle:hover { background: var(--paper-2); color: var(--ink); }
+@media (max-width: 760px) { .navtoggle { display: none; } }

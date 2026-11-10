@@ -25,6 +25,7 @@ Nobody can see another company's data — the database and the file bucket both 
 - **Home** — dashboard: needs-attention tasks, open requests, numbers, activity, quick actions. Employees get a self-service home.
 - **Org chart & directory** — drawn from each employee's manager; name, title, department, work email. Visible to all tiers.
 - **Tasks** — every onboarding/compliance task across employees; overdue / due this week filters.
+- **Onboarding templates & e-signature** — Settings → Onboarding checklist: attach the document behind each task and require a signature. Signing (employee self-service or in person) draws a signature, records consent, and files a stamped PDF (original + certificate page with name, time, signer account).
 - **Search (⌘K / Ctrl+K or /)** — employees, jobs, candidates, tasks, documents, requests, and actions.
 - **Hiring** — job orders per client; candidates on a drag-and-drop board (Applied → Screening → Interview → Offer → Hired / Passed), resume upload, notes, attachments (full description, interview guide, scorecard), activity log of who did what. Shared between you and the client admin.
 - **Requests (Ask JHM)** — in-portal contact form; clients file questions, you reply from a cross-client inbox. No email addresses exposed.
@@ -37,7 +38,7 @@ Nobody can see another company's data — the database and the file bucket both 
 
 ### 1. Supabase project
 1. supabase.com → **New project**. Name `hhg-portal`, pick a strong database password (save it in your password manager), region **East US**.
-2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql` and `supabase/005_roles.sql`.
+2. **SQL Editor → New query** → paste the entire contents of `supabase/schema.sql` → **Run**. It should finish with "Success. No rows returned." Then do the same with `supabase/002_employees.sql` `supabase/003_requests.sql`, `supabase/004_job_files.sql`, `supabase/005_roles.sql` and `supabase/006_signatures.sql`.
 3. **Authentication → Providers → Email**: leave *Enable email provider* on and *Confirm email* on. Set minimum password length to 10 (Authentication → Policies / Password).
 4. **Authentication → URL Configuration**:
    - Site URL: `https://portal.hopeharvestgroup.com` (or wherever the portal will live; `http://localhost:8080` while testing).
@@ -106,4 +107,5 @@ supabase/
   003_requests.sql   Ask JHM requests table + navy default accent
   004_job_files.sql  attachments on job orders
   005_roles.sql      four roles, modules, employee self-service linking, directory view
+  006_signatures.sql onboarding templates (document per task) + e-signatures with stamped PDF
 ```

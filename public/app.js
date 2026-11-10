@@ -227,6 +227,7 @@
     app.innerHTML = `
       <div class="shell ${inWorkspace ? "in-ws" : "hq"} ${collapsed ? "collapsed" : ""}">
         <header class="topbar">
+          <button class="navtoggle" id="navtoggle" title="${collapsed ? "Expand" : "Collapse"} sidebar" aria-label="Toggle sidebar">☰</button>
           <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div><div class="sub">${inWorkspace ? roleLabel(effRole()) + " view" : "The Hope Harvest Group · JHM Consulting"}</div></div></div>
           ${inWorkspace ? `<button class="searchbar" id="opensearch"><span>⌕</span><span class="ph">Search people, jobs, tasks, documents…</span><kbd>⌘K</kbd></button>` : ""}
           <div class="spacer"></div>${viewAs}${orgSwitch}
@@ -248,7 +249,8 @@
     $("#signout").onclick = () => sb.auth.signOut();
     menu.querySelector("[data-go]").onclick = () => { location.hash = "#settings"; };
     const os = $("#opensearch"); if (os) os.onclick = () => openSearch();
-    $("#collapse").onclick = () => { try { localStorage.setItem("hhg.side", collapsed ? "0" : "1"); } catch {} render(); };
+    const toggleSide = () => { try { localStorage.setItem("hhg.side", collapsed ? "0" : "1"); } catch {} render(); };
+    $("#collapse").onclick = toggleSide; $("#navtoggle").onclick = toggleSide;
     const sel = $("#orgsel"); if (sel) sel.onchange = () => switchOrg(sel.value);
     const ask = $("#askjhm"); if (ask) ask.onclick = (e) => { e.preventDefault(); requestModal(); };
     const va = $("#viewas"); if (va) va.onchange = () => { S.viewAs = va.value || null; const ok = navItems().some((n) => n.h === route); if (!ok) location.hash = "#home"; else render(); };
@@ -662,7 +664,7 @@
   async function viewEmployee(id) {
     const [{ data: e, error }, { data: tasks }, { data: contacts }, { data: deps }, { data: files }] = await Promise.all([
       sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("id", id).single(),
-      sb.from("employee_tasks").select("*, completed_by(id,full_name)").eq("employee_id", id).order("sort_order"),
+      sb.from("employee_tasks").select("*, completed_by(id,full_name), template_doc:template_doc_id(id,title,file_path,file_name,mime_type)").eq("employee_id", id).order("sort_order"),
       sb.from("emergency_contacts").select("*").eq("employee_id", id).order("is_primary", { ascending: false }),
       sb.from("dependents").select("*").eq("employee_id", id).order("date_of_birth"),
       sb.from("employee_files").select("*").eq("employee_id", id).order("created_at", { ascending: false }),
@@ -693,6 +695,7 @@
       $("#addfile").onclick = () => empFileModal(e);
       $("#addtask").onclick = () => taskModal(e);
       $("#main").querySelectorAll("[data-task]").forEach((b) => b.onclick = () => taskModal(e, tasks.find((t) => t.id === b.dataset.task)));
+      $("#main").querySelectorAll("[data-sign]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); signModal(e, tasks.find((t) => t.id === b.dataset.sign)); });
       $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); openFile(b.dataset.open); });
       $("#main").querySelectorAll("[data-tstatus]").forEach((sel) => sel.onclick = (ev) => ev.stopPropagation());
       $("#main").querySelectorAll("[data-tstatus]").forEach((sel) => sel.onchange = async () => {
@@ -718,10 +721,10 @@
         <table style="margin-top:8px"><tbody>${tasks.map((t) => { const late = t.due_date && t.due_date < today && !["complete", "na"].includes(t.status);
           return `<tr class="clickable" data-task="${t.id}"><td style="width:46%"><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.notes ? `<div class="small">${esc(t.notes)}</div>` : ""}</td>
             <td class="small ${late ? "late" : "muted"}">${t.due_date ? (late ? "Overdue · " : "Due ") + fmtDate(t.due_date) : ""}</td>
-            <td>${t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : `<span class="small muted">No file</span>`}</td>
+            <td>${t.signed_file_path ? `<button class="btn sm ghost" data-open="${t.signed_file_path}">✍ Signed copy</button>` : t.file_path ? `<button class="btn sm ghost" data-open="${t.file_path}">📄 ${esc(t.file_name || "File")}</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 ${esc(t.template_doc.title)}</button>${t.requires_signature ? ` <button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : ""}` : `<span class="small muted">No file</span>`}</td>
             <td style="text-align:right"><select data-tstatus="${t.id}" class="${t.status}" style="width:auto;padding:5px 8px">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${t.status === k ? "selected" : ""}>${v}</option>`).join("")}</select>
               ${t.completed_at ? `<div class="small muted">${esc(t.completed_by?.full_name || "")} · ${fmtDate(t.completed_at)}</div>` : ""}</td></tr>`; }).join("")}</tbody></table>
-        <p class="small muted" style="margin:10px 0 0">Click a task to upload the completed form or add a note. W-4 and I-9 files are admin-only and never visible to staff.</p></div>
+        <p class="small muted" style="margin:10px 0 0">Click a task to upload a completed form, sign, or add a note. Set which document backs each task under <a href="#settings">Settings → Onboarding</a>.</p></div>
 
       <div class="two">
         <div class="card"><div class="card-head"><h3>Personal</h3><button class="editlink" data-editsec="personal">Edit</button></div>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}${field("Gender", e.gender)}${field("Marital status", e.marital_status)}</div>
@@ -740,6 +743,8 @@
   function taskModal(e, t = null) {
     const m = modal(`
       <div class="modal-head"><h3>${t ? esc(t.label) : "Add task"}</h3><button class="x" data-close>×</button></div>
+      ${t && (t.template_doc_id || t.requires_signature) ? `<div class="signbox">${t.template_doc ? `<button type="button" class="btn sm ghost" id="opentpl">📄 Open ${esc(t.template_doc.title)}</button>` : `<span class="small muted">No template document set — pick one under Settings → Onboarding.</span>`}
+        ${t.signed_at ? `<span class="pill ok">Signed by ${esc(t.signed_name || "")} · ${fmtDT(t.signed_at)}</span>${t.signed_file_path ? `<button type="button" class="btn sm quiet" id="opensigned">Open signed copy</button>` : ""}` : (t.requires_signature ? `<button type="button" class="btn sm" id="signnow">✍ Sign now</button>` : "")}</div>` : ""}
       <form id="f" novalidate>
         ${t ? "" : `<label>Task name</label><input type="text" name="label" required placeholder="e.g. Direct deposit form" /><label>Description</label><input type="text" name="description" />`}
         <div class="two"><div><label>Status</label><select name="status">${Object.entries(TASK_STATUS).map(([k, v]) => `<option value="${k}" ${(t?.status || "pending") === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
@@ -749,6 +754,9 @@
         <div class="modal-foot">${t && t.task_key === "custom" ? `<button type="button" class="btn danger" id="del">Delete</button><span class="spacer"></span>` : ""}<button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="save">Save</button></div>
       </form>`);
     const f = m.el.querySelector("#f");
+    const ot = m.el.querySelector("#opentpl"); if (ot) ot.onclick = () => openFile(t.template_doc.file_path);
+    const osg = m.el.querySelector("#opensigned"); if (osg) osg.onclick = () => openFile(t.signed_file_path);
+    const sn = m.el.querySelector("#signnow"); if (sn) sn.onclick = () => { m.close(); signModal(e, t); };
     f.onsubmit = (ev) => { ev.preventDefault(); busy(m.el.querySelector("#save"), async () => {
       const d = Object.fromEntries(new FormData(f)); const file = f.file.files[0];
       const doneNow = ["complete", "na"].includes(d.status);
@@ -1038,7 +1046,7 @@
     const d = a.detail || {};
     if (a.entity_type === "job_order" || a.entity_type === "candidate") return actText(a);
     if (a.entity_type === "document") return `${a.action} document${d.title ? ` "${d.title}"` : ""}`;
-    if (a.entity_type === "employee") { if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
+    if (a.entity_type === "employee") { if (a.action === "task_signed") return `signed "${d.task}" for ${d.name} (${d.signer})`; if (a.action.startsWith("task_")) return `${a.action === "task_complete" ? "completed" : a.action === "task_na" ? "marked N/A" : "updated"} "${d.task}" for ${d.name}`; if (a.action === "file_added") return `added "${d.title}" to ${d.name}'s file`; return `${a.action} employee ${d.name || ""}`; }
     if (a.entity_type === "membership") return a.action === "invited" ? `invited ${d.email} as ${d.role}` : `${a.action} ${d.email || "a user"}`;
     if (a.entity_type === "request") return `sent a request: "${d.subject}"`;
     return `${a.action} ${a.entity_type}`;
@@ -1049,7 +1057,7 @@
     const { data: e } = await sb.from("employees").select("*, manager:manager_id(first_name,last_name)").eq("org_id", S.org.id).eq("user_id", S.session.user.id).maybeSingle();
     if (!e) return `<div class="hero"><div class="eyebrow">${esc(S.org.name)}</div><h1>My profile</h1></div><div class="empty"><h3>Your employee record isn't linked yet</h3><p>Your administrator adds your record and links it to <b>${esc(S.profile.email)}</b>. Until then, your documents and Ask JHM are available from the sidebar.</p></div>`;
     const [{ data: tasks }, { data: contacts }, { data: deps }] = await Promise.all([
-      sb.from("employee_tasks").select("id,label,status,due_date,completed_at").eq("employee_id", e.id).order("sort_order"),
+      sb.from("employee_tasks").select("*, template_doc:template_doc_id(id,title,file_path,file_name,mime_type)").eq("employee_id", e.id).order("sort_order"),
       sb.from("emergency_contacts").select("*").eq("employee_id", e.id).order("is_primary", { ascending: false }),
       sb.from("dependents").select("*").eq("employee_id", e.id).order("date_of_birth"),
     ]);
@@ -1061,6 +1069,8 @@
       $("#main").querySelectorAll("[data-editcontact]").forEach((b) => b.onclick = () => contactModal(e, contacts.find((c) => c.id === b.dataset.editcontact)));
       $("#main").querySelectorAll("[data-editdep]").forEach((b) => b.onclick = () => dependentModal(e, deps.find((c) => c.id === b.dataset.editdep)));
       const a = $("#askchange"); if (a) a.onclick = () => requestModal();
+      $("#main").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openFile(b.dataset.open));
+      $("#main").querySelectorAll("[data-sign]").forEach((b) => b.onclick = () => signModal(e, (tasks || []).find((t) => t.id === b.dataset.sign)));
     };
     return `
       <div class="hero"><div class="eyebrow">${esc(S.org.name)} · ${EMP_STATUS[e.status]}</div><h1>${esc(empName(e))}</h1><p>${[e.job_title, e.department, e.work_location].filter(Boolean).map(esc).join(" · ") || "Your employee profile."}</p></div>
@@ -1068,7 +1078,9 @@
         <div class="card"><h3>Personal</h3>${field("Legal name", [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(" "))}${field("Preferred name", e.preferred_name)}${field("Date of birth", fmtDate(e.date_of_birth))}<p class="small muted" style="margin:10px 0 0">Need something corrected? <a href="#" id="askchange">Ask JHM</a>.</p></div>
         <div class="card"><h3>Contact</h3>${field("Personal email", e.personal_email)}${field("Work email", e.work_email)}${field("Mobile", e.mobile_phone)}${field("Address", [e.address1, e.address2, [e.city, e.state].filter(Boolean).join(", "), e.zip].filter(Boolean).join(", "))}</div>
         <div class="card"><h3>Employment</h3>${field("Start date", fmtDate(e.start_date))}${field("Employee type", e.employee_type)}${field("Manager", e.manager ? e.manager.first_name + " " + e.manager.last_name : "")}${field("Scheduled hours", e.scheduled_hours ? e.scheduled_hours + " / week" : "")}</div>
-        <div class="card"><h3>Onboarding <span class="pill ${done === (tasks || []).length ? "ok" : "on"}">${done}/${(tasks || []).length}</span></h3>${(tasks || []).map((t) => `<div class="fld"><span>${esc(t.label)}</span><b class="${["complete", "na"].includes(t.status) ? "ok-text" : ""}">${TASK_STATUS[t.status]}</b></div>`).join("") || `<p class="small muted">No items.</p>`}</div>
+        <div class="card" style="grid-column:1/-1"><h3>Onboarding <span class="pill ${done === (tasks || []).length ? "ok" : "on"}">${done}/${(tasks || []).length}</span></h3>
+          ${(tasks || []).map((t) => { const d = ["complete", "na"].includes(t.status); return `<div class="sub-row"><div><b>${esc(t.label)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ""}${t.signed_at ? `<div class="small ok-text">Signed ${fmtDT(t.signed_at)}</div>` : ""}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${t.signed_file_path ? `<button class="btn sm quiet" data-open="${t.signed_file_path}">Signed copy</button>` : t.template_doc ? `<button class="btn sm quiet" data-open="${t.template_doc.file_path}">📄 Review</button>` : ""}${t.requires_signature && !t.signed_at && t.template_doc ? `<button class="btn sm" data-sign="${t.id}">✍ Sign</button>` : `<span class="pill ${d ? "ok" : t.status === "in_progress" ? "on" : ""}">${TASK_STATUS[t.status]}</span>`}</div></div>`; }).join("") || `<p class="small muted">No items.</p>`}</div>
         <div class="card"><div class="card-head"><h3>Emergency contacts</h3><button class="btn sm quiet" id="addcontact">＋ Add</button></div>
           ${(contacts || []).length ? contacts.map((c) => `<div class="sub-row"><div><b>${esc(c.full_name)}</b> ${c.is_primary ? '<span class="pill on">Primary</span>' : ""}<div class="small muted">${[c.relationship, c.phone, c.email].filter(Boolean).map(esc).join(" · ")}</div></div><button class="btn sm quiet" data-editcontact="${c.id}">Edit</button></div>`).join("") : `<p class="small muted" style="margin-top:8px">Add someone we can reach in an emergency.</p>`}</div>
         <div class="card"><div class="card-head"><h3>Dependents</h3><button class="btn sm quiet" id="adddep">＋ Add</button></div>
@@ -1108,10 +1120,70 @@
       <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Work email</th><th>Reports to</th></tr></thead><tbody id="dirrows">${dirRows()}</tbody></table></div>`;
   }
 
+  // ------------------------------------------------------------ E-SIGNATURE
+  function signModal(e, t) {
+    if (!t?.template_doc) { toast("This task has no document to sign yet.", true); return; }
+    const isSelf = e.user_id === S.session.user.id || !isStaff();
+    const defaultName = isSelf ? (S.profile.full_name || "") : `${e.first_name} ${e.last_name}`;
+    const m = modal(`<div class="modal-head"><h3>Sign: ${esc(t.label)}</h3><button class="x" data-close>×</button></div>
+      <div class="signbox"><button type="button" class="btn sm ghost" id="review">📄 Review ${esc(t.template_doc.title)}</button><span class="small muted">Read the document before signing.</span></div>
+      <label>Full legal name of signer</label><input type="text" id="sname" value="${esc(defaultName)}" autocomplete="off" />
+      <label>Signature <span class="muted">— draw with your finger or mouse</span></label>
+      <div class="padwrap"><canvas id="pad" width="760" height="220"></canvas><button type="button" class="btn sm quiet" id="clear">Clear</button></div>
+      <label class="check"><input type="checkbox" id="consent" /> I have reviewed <b>${esc(t.template_doc.title)}</b> and agree to sign it electronically. I understand this signature is legally binding, the same as a handwritten one.</label>
+      <div class="modal-foot"><button type="button" class="btn quiet" data-close>Cancel</button><button class="btn" id="dosign">Sign and file</button></div>`, { wide: true });
+    m.el.querySelector("#review").onclick = () => openFile(t.template_doc.file_path);
+    const cv = m.el.querySelector("#pad"), ctx = cv.getContext("2d"); let drawing = false, has = false, last = null;
+    ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#17191f";
+    const pos = (ev) => { const r = cv.getBoundingClientRect(); const p = ev.touches ? ev.touches[0] : ev; return [(p.clientX - r.left) * cv.width / r.width, (p.clientY - r.top) * cv.height / r.height]; };
+    const start = (ev) => { ev.preventDefault(); drawing = true; last = pos(ev); };
+    const move = (ev) => { if (!drawing) return; ev.preventDefault(); const p = pos(ev); ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; has = true; };
+    const end = () => (drawing = false);
+    cv.onmousedown = start; cv.onmousemove = move; window.addEventListener("mouseup", end);
+    cv.ontouchstart = start; cv.ontouchmove = move; cv.ontouchend = end;
+    m.el.querySelector("#clear").onclick = () => { ctx.clearRect(0, 0, cv.width, cv.height); has = false; };
+    m.el.querySelector("#dosign").onclick = () => busy(m.el.querySelector("#dosign"), async () => {
+      const name = m.el.querySelector("#sname").value.trim();
+      if (!name) throw new Error("Enter the signer's full legal name.");
+      if (!has) throw new Error("Please draw a signature.");
+      if (!m.el.querySelector("#consent").checked) throw new Error("Please confirm you reviewed the document and consent to sign electronically.");
+      const when = new Date();
+      const pngBlob = await new Promise((res) => cv.toBlob(res, "image/png"));
+      const base = `${S.org.id}/employees/${e.id}/signatures/${t.task_key}-${when.getTime()}`;
+      const { error: e1 } = await sb.storage.from(BUCKET).upload(base + ".png", pngBlob, { contentType: "image/png" }); if (e1) throw e1;
+      const upd = { signed_at: when.toISOString(), signed_name: name, signed_by: S.session.user.id, signature_path: base + ".png", status: "complete", completed_at: when.toISOString(), completed_by: S.session.user.id };
+      // stamped PDF: original + certificate page (PDF templates only)
+      const isPdf = /pdf$/i.test(t.template_doc.mime_type || "") || /\.pdf$/i.test(t.template_doc.file_name || "");
+      if (isPdf && window.PDFLib) {
+        try {
+          const { data: dl, error: e2 } = await sb.storage.from(BUCKET).download(t.template_doc.file_path); if (e2) throw e2;
+          const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
+          const pdf = await PDFDocument.load(await dl.arrayBuffer(), { ignoreEncryption: true });
+          const png = await pdf.embedPng(await pngBlob.arrayBuffer());
+          const font = await pdf.embedFont(StandardFonts.Helvetica), bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+          const page = pdf.addPage([612, 792]); const ink = rgb(.09, .1, .12), grey = rgb(.45, .47, .52);
+          page.drawText("Electronic Signature Certificate", { x: 56, y: 720, size: 20, font: bold, color: ink });
+          page.drawText(S.org.name, { x: 56, y: 696, size: 11, font, color: grey });
+          const lines = [["Document", t.template_doc.title], ["Task", t.label], ["Employee", `${e.first_name} ${e.last_name}`], ["Signed by", name], ["Signer account", S.profile.email], ["Signed at", when.toLocaleString() + " (" + Intl.DateTimeFormat().resolvedOptions().timeZone + ")"], ["Consent", "Signer confirmed they reviewed the document and agreed to sign electronically."]];
+          let y = 650; for (const [k, v] of lines) { page.drawText(k.toUpperCase(), { x: 56, y, size: 8, font: bold, color: grey }); page.drawText(String(v), { x: 180, y, size: 11, font, color: ink, maxWidth: 380 }); y -= 26; }
+          const sw = 260, sh = sw * png.height / png.width; page.drawRectangle({ x: 56, y: y - sh - 20, width: sw, height: sh, borderColor: grey, borderWidth: .5 }); page.drawImage(png, { x: 56, y: y - sh - 20, width: sw, height: sh });
+          page.drawText("Signature", { x: 56, y: y - sh - 34, size: 8, font: bold, color: grey });
+          page.drawText("Generated by the HHG Client Portal · The Hope Harvest Group / JHM Consulting", { x: 56, y: 40, size: 8, font, color: grey });
+          const bytes = await pdf.save();
+          const { error: e3 } = await sb.storage.from(BUCKET).upload(base + "-signed.pdf", new Blob([bytes], { type: "application/pdf" }), { contentType: "application/pdf" }); if (e3) throw e3;
+          upd.signed_file_path = base + "-signed.pdf"; upd.signed_file_name = (t.template_doc.title || "document").replace(/[^\w.\- ]+/g, "") + " - signed.pdf";
+        } catch (err) { console.warn("stamped PDF failed, keeping signature image", err); }
+      }
+      const { error: e4 } = await sb.from("employee_tasks").update(upd).eq("id", t.id); if (e4) throw e4;
+      await log("employee", e.id, "task_signed", { name: `${e.first_name} ${e.last_name}`, task: t.label, signer: name });
+      m.close(); toast("Signed and filed"); render();
+    });
+  }
+
   // ------------------------------------------------------------ TASKS (all employees)
   let taskFilter = "open";
   async function viewTasks() {
-    const { data: tasks, error } = await sb.from("employee_tasks").select("*, completed_by(id,full_name), employees(id,first_name,last_name,preferred_name,status)").eq("org_id", S.org.id).order("due_date", { ascending: true, nullsFirst: false });
+    const { data: tasks, error } = await sb.from("employee_tasks").select("*, completed_by(id,full_name), template_doc:template_doc_id(id,title,file_path,file_name,mime_type), employees(id,first_name,last_name,preferred_name,status)").eq("org_id", S.org.id).order("due_date", { ascending: true, nullsFirst: false });
     if (error) throw error;
     const t0 = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
     const isOpen = (t) => ["pending", "in_progress"].includes(t.status);
@@ -1149,6 +1221,30 @@
         toast("Company settings saved"); render(); }); };
       const ac = $("#accent"); const sw = $("#swatch"); if (ac && sw) ac.oninput = () => (sw.style.background = ac.value);
     };
+    let tplCard = "";
+    if (S.org && isStaff() && mods().employees) {
+      await sb.rpc("ensure_task_templates", { p_org: S.org.id });
+      const [{ data: tpls }, { data: docs }] = await Promise.all([sb.from("task_templates").select("*").eq("org_id", S.org.id).order("sort_order"), sb.from("documents").select("id,title,category").eq("org_id", S.org.id).order("title")]);
+      const docOpts = (sel) => `<option value="">— no document —</option>${(docs || []).map((d) => `<option value="${d.id}" ${sel === d.id ? "selected" : ""}>${esc(d.title)}</option>`).join("")}`;
+      tplCard = `<div class="card" style="grid-column:1/-1"><h3>Onboarding checklist</h3><p class="small muted">Every new employee gets these tasks. Attach the document that backs each one (upload it under Documents first) and tick <b>Sign</b> where a signature is required. Changes apply to employees added from now on.</p>
+        <div style="overflow:auto"><table class="tpl"><thead><tr><th style="width:36px"></th><th>Task</th><th>Document</th><th>Sign</th><th>Due</th><th></th></tr></thead><tbody>
+        ${(tpls || []).map((t) => `<tr data-tpl="${t.id}"><td><input type="checkbox" class="en" ${t.enabled ? "checked" : ""} title="Enabled" /></td><td><input type="text" class="lbl" value="${esc(t.label)}" /><input type="text" class="desc small" value="${esc(t.description || "")}" placeholder="Short description" style="margin-top:4px" /></td><td><select class="doc">${docOpts(t.document_id)}</select></td><td style="text-align:center"><input type="checkbox" class="sig" ${t.requires_signature ? "checked" : ""} /></td><td><select class="due"><option value="start" ${t.due_rule === "start" ? "selected" : ""}>Start date</option><option value="start+3bd" ${t.due_rule === "start+3bd" ? "selected" : ""}>Start + 3 business days</option><option value="hire+20" ${t.due_rule === "hire+20" ? "selected" : ""}>Hire + 20 days</option><option value="none" ${t.due_rule === "none" ? "selected" : ""}>No due date</option></select></td><td>${t.task_key.startsWith("custom_") ? `<button class="btn sm danger deltpl">Delete</button>` : ""}</td></tr>`).join("")}
+        </tbody></table></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn quiet sm" id="addtpl">＋ Add task to checklist</button><span class="spacer"></span><button class="btn" id="savetpl">Save checklist</button></div></div>`;
+      const prevHook = window.__afterRender;
+      window.__afterRender = () => {
+        prevHook && prevHook();
+        $("#savetpl").onclick = () => busy($("#savetpl"), async () => {
+          const rows = [...$("#main").querySelectorAll("tr[data-tpl]")].map((r, i) => ({ id: r.dataset.tpl, enabled: r.querySelector(".en").checked, label: r.querySelector(".lbl").value.trim() || "Task", description: r.querySelector(".desc").value.trim() || null, document_id: r.querySelector(".doc").value || null, requires_signature: r.querySelector(".sig").checked, due_rule: r.querySelector(".due").value, sort_order: (i + 1) * 10 }));
+          for (const r of rows) { const { id, ...rec } = r; const { error } = await sb.from("task_templates").update(rec).eq("id", id); if (error) throw error; }
+          toast("Checklist saved"); render();
+        });
+        $("#addtpl").onclick = () => busy($("#addtpl"), async () => {
+          const { error } = await sb.from("task_templates").insert({ org_id: S.org.id, task_key: "custom_" + Date.now().toString(36), label: "New task", sort_order: 500, due_rule: "start" }); if (error) throw error; render();
+        });
+        $("#main").querySelectorAll(".deltpl").forEach((b) => b.onclick = async () => { const id = b.closest("tr").dataset.tpl; const { error } = await sb.from("task_templates").delete().eq("id", id); if (error) fail(error); else render(); });
+      };
+    }
     const company = S.org && isAdmin() ? `<div class="card"><h3>Company</h3><p class="small muted">How ${esc(S.org.name)}'s workspace looks to everyone who signs in.</p>
         <form id="cf" novalidate><label>Company name</label><input type="text" name="cname" value="${esc(S.org.name)}" />
           <label>Logo ${S.logoUrl ? `<span class="muted">(current shown below)</span>` : ""}</label>${S.logoUrl ? `<div class="ws-logo" style="max-width:240px;border:1px solid var(--line)"><img src="${S.logoUrl}" alt="" /></div>` : ""}<input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
@@ -1159,6 +1255,7 @@
       <div class="card"><h3>Your profile</h3><form id="pf"><label>Full name</label><input type="text" name="full_name" value="${esc(S.profile.full_name || "")}" /><label>Email</label><input type="email" value="${esc(S.profile.email)}" disabled /><label>Role</label><input type="text" value="${roleLabel(S.role)}${S.org ? " · " + esc(S.org.name) : ""}" disabled /><button class="btn block">Save</button></form></div>
       <div class="card"><h3>Password</h3><form id="pw"><label>New password <span class="muted">(10+ characters)</span></label><input type="password" name="password" minlength="10" required autocomplete="new-password" /><button class="btn block">Update password</button></form></div>
       ${isRealSuper() ? `<div class="card"><h3>Portal administration</h3><p class="small muted">Client workspaces, logos, modules and access are managed from the Clients screen.</p><a class="btn quiet" href="#admin">Go to Clients →</a></div>` : ""}</div>
+      ${tplCard ? `<div style="margin-top:14px">${tplCard}</div>` : ""}
       <div style="margin-top:18px">${rolesExplainer()}</div>`;
   }
 
@@ -1206,17 +1303,18 @@
       const cmds = commands().filter((c) => !term || term.toLowerCase().split(/\s+/).every((w) => c.keys.includes(w)));
       if (!term) { items = cmds; sel = 0; draw(); return; }
       const like = `%${term.replace(/[%_]/g, "")}%`; const org = S.org.id;
+      const M = mods(); const none = Promise.resolve({ data: [] });
       const [emps, jobs, cands, docs, tasks, reqs] = await Promise.all([
-        sb.from("employees").select("id,first_name,last_name,preferred_name,job_title,department,status").eq("org_id", org).or(`first_name.ilike.${like},last_name.ilike.${like},preferred_name.ilike.${like},job_title.ilike.${like},department.ilike.${like},work_email.ilike.${like}`).limit(6),
-        sb.from("job_orders").select("id,title,department,status").eq("org_id", org).or(`title.ilike.${like},department.ilike.${like},location.ilike.${like}`).limit(5),
-        sb.from("candidates").select("id,full_name,stage,job_order_id,job_orders(title)").eq("org_id", org).or(`full_name.ilike.${like},email.ilike.${like}`).limit(5),
+        M.employees ? sb.from(isStaff() ? "employees" : "directory").select("id,first_name,last_name,preferred_name,job_title,department,status").eq("org_id", org).or(`first_name.ilike.${like},last_name.ilike.${like},preferred_name.ilike.${like},job_title.ilike.${like},department.ilike.${like},work_email.ilike.${like}`).limit(6) : none,
+        isStaff() && M.hiring ? sb.from("job_orders").select("id,title,department,status").eq("org_id", org).or(`title.ilike.${like},department.ilike.${like},location.ilike.${like}`).limit(5) : none,
+        isStaff() && M.hiring ? sb.from("candidates").select("id,full_name,stage,job_order_id,job_orders(title)").eq("org_id", org).or(`full_name.ilike.${like},email.ilike.${like}`).limit(5) : none,
         sb.from("documents").select("id,title,category,file_path").eq("org_id", org).or(`title.ilike.${like},description.ilike.${like}`).limit(6),
         isStaff() ? sb.from("employee_tasks").select("id,label,status,due_date,employee_id,employees(first_name,last_name)").eq("org_id", org).or(`label.ilike.${like},notes.ilike.${like}`).limit(6) : Promise.resolve({ data: [] }),
         sb.from("requests").select("id,subject,status").eq("org_id", org).or(`subject.ilike.${like},body.ilike.${like}`).limit(4),
       ]);
       if (my !== seq) return;
       items = [
-        ...(emps.data || []).map((e) => ({ type: "Employees", title: `${e.preferred_name || e.first_name} ${e.last_name}`, sub: [e.job_title, e.department].filter(Boolean).join(" · "), badge: EMP_STATUS[e.status], go: () => (location.hash = "#employees/" + e.id) })),
+        ...(emps.data || []).map((e) => ({ type: isStaff() ? "Employees" : "People", title: `${e.preferred_name || e.first_name} ${e.last_name}`, sub: [e.job_title, e.department].filter(Boolean).join(" · "), badge: isStaff() ? EMP_STATUS[e.status] : "", go: () => (location.hash = isStaff() ? "#employees/" + e.id : "#org") })),
         ...(jobs.data || []).map((j) => ({ type: "Job orders", title: j.title, sub: j.department || "", badge: JOB_STATUS[j.status], go: () => (location.hash = "#hiring/" + j.id) })),
         ...(cands.data || []).map((c) => ({ type: "Candidates", title: c.full_name, sub: c.job_orders?.title || "", badge: STAGE_LABEL[c.stage], go: () => (location.hash = "#hiring/" + c.job_order_id) })),
         ...(tasks.data || []).map((t) => ({ type: "Tasks", title: t.label, sub: t.employees ? `${t.employees.first_name} ${t.employees.last_name}` : "", badge: TASK_STATUS[t.status], badgeClass: t.status === "complete" ? "ok" : "", go: () => (location.hash = "#employees/" + t.employee_id) })),
