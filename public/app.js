@@ -236,7 +236,7 @@
       <div class="shell ${inWorkspace ? "in-ws" : "hq"} ${collapsed ? "collapsed" : ""}">
         <header class="topbar">
           <button class="navtoggle" id="navtoggle" title="${collapsed ? "Expand" : "Collapse"} sidebar" aria-label="Toggle sidebar">☰</button>
-          <div class="brand">${logo}<div>${inWorkspace ? `<div class="name">${esc(S.org.name)}</div>` : `${WORDMARK(22)}<div class="sub">The Hope Harvest Group · JHM Consulting</div>`}</div></div>
+          <div class="brand ${inWorkspace ? "" : "hq-brand"}">${logo}<div>${inWorkspace ? `<div class="name">${esc(S.org.name)}</div>` : WORDMARK(22)}</div></div>
           ${inWorkspace ? `<button class="searchbar" id="opensearch"><span>⌕</span><span class="ph">Search people, jobs, tasks, documents…</span><kbd>⌘K</kbd></button>` : ""}
           <div class="spacer"></div>${viewAs}${orgSwitch}
           <div class="avatar" id="avatar" title="${esc(S.profile.email)}">${esc(initials(S.profile.full_name || S.profile.email))}</div>

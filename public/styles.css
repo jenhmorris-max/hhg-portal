@@ -356,3 +356,7 @@ table.tpl td { vertical-align: top; }
 .wordmark .wm-b { color: var(--brass); font-style: italic; margin-left: .08em; }
 .wordmark .wm-line { position: absolute; left: 2%; right: 4%; bottom: 0; width: 94%; height: .3em; color: var(--brass); }
 .auth-brand small { margin-top: 8px; }
+
+/* JHM view: the wordmark lives in the sidebar; the top bar shows it only on phones */
+.brand.hq-brand { display: none; }
+@media (max-width: 760px) { .brand.hq-brand { display: flex; } }
