@@ -1,4 +1,4 @@
-# HHG Client Portal
+# Homestead HR — client HR portal
 
 Secure, multi-client HR document portal for JHM Consulting clients, under The Hope Harvest Group.
 
@@ -49,8 +49,8 @@ Nobody can see another company's data — the database and the file bucket both 
 ### 1b. Email delivery (required before inviting clients)
 Supabase's built-in mailer only delivers to **your own team's addresses** and is capped at a few emails per hour — fine for testing, useless for clients. Set up custom SMTP once:
 1. Create a free account at resend.com (3,000 emails/month free) → add and verify the domain `hopeharvestgroup.com` (it gives you DNS records to add in Cloudflare) → create an API key.
-2. Supabase → **Project Settings → Authentication → SMTP Settings** → Enable custom SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = the API key, sender `portal@hopeharvestgroup.com`, sender name `HHG Client Portal`.
-3. Optional: **Authentication → Email Templates** → edit *Magic Link* to read as an invitation ("You've been invited to the HHG Client Portal…"), and *Confirm signup* / *Reset password* to match.
+2. Supabase → **Project Settings → Authentication → SMTP Settings** → Enable custom SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = the API key, sender `hello@homesteadhr.com` (or `portal@hopeharvestgroup.com` until you have the domain), sender name `Homestead HR`.
+3. Optional: **Authentication → Email Templates** → edit *Magic Link* to read as an invitation ("You've been invited to Homestead HR…"), and *Confirm signup* / *Reset password* to match.
 
 ### 2. Configure the front end
 Edit `public/config.js` and paste the two values. (The anon key is meant to be public; the service_role key must never go here.)

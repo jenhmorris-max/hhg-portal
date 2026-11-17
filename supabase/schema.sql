@@ -1,5 +1,5 @@
 -- ============================================================
---  HHG Client Portal — database schema + row-level security
+--  Homestead HR — database schema + row-level security
 --  Run this whole file once in Supabase: SQL Editor → New query → Run
 -- ============================================================
 
