@@ -360,3 +360,9 @@ table.tpl td { vertical-align: top; }
 /* JHM view: the wordmark lives in the sidebar; the top bar shows it only on phones */
 .brand.hq-brand { display: none; }
 @media (max-width: 760px) { .brand.hq-brand { display: flex; } }
+
+.ws-card.slim { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ws-card.slim .ws-back { margin: 0; } .ws-card.slim .ws-sub { margin: 0; }
+.powered { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 14px 12px 2px; border-top: 1px solid var(--line); margin-top: 10px; }
+.powered .small { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
+.shell.collapsed .powered { display: none; }

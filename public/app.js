@@ -229,7 +229,7 @@
     const viewAs = isRealSuper() && inWorkspace ? `<div class="viewas"><span class="small muted">View as</span><select id="viewas">
         <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="owner" ${S.viewAs === "owner" ? "selected" : ""}>Owner</option><option value="staff" ${S.viewAs === "staff" ? "selected" : ""}>Staff</option><option value="employee" ${S.viewAs === "employee" ? "selected" : ""}>Employee</option></select></div>` : "";
     const sideTop = inWorkspace
-      ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : `<div class="ws-mono">${esc(initials(S.org.name))}</div><div class="ws-name">${esc(S.org.name)}</div>`}<div class="ws-sub"><span class="rolebadge" title="${esc(ROLE[effRole()]?.blurb || "")}">${isRealSuper() && S.viewAs ? "Viewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</span></div></div>`
+      ? `<div class="ws-card slim">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}<div class="ws-sub"><span class="rolebadge" title="${esc(ROLE[effRole()]?.blurb || "")}">${isRealSuper() && S.viewAs ? "Viewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</span></div></div>`
       : `<div class="ws-card hq">${WORDMARK(26)}<div class="ws-sub" style="margin-top:8px"><span class="rolebadge">JHM admin</span></div></div>`;
     let collapsed = false; try { collapsed = localStorage.getItem("hhg.side") === "1"; } catch {}
     app.innerHTML = `
@@ -245,7 +245,8 @@
         </header>
         <div class="layout">
           <nav class="sidenav">${sideTop}${nav.map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}" title="${n.t}"><i>${n.i}</i><span class="lbl">${n.t}</span></a>`).join("")}
-            <button class="collapse" id="collapse" title="${collapsed ? "Expand" : "Collapse"} sidebar">${collapsed ? "»" : "«"}<span class="lbl"> Collapse</span></button></nav>
+            <button class="collapse" id="collapse" title="${collapsed ? "Expand" : "Collapse"} sidebar">${collapsed ? "»" : "«"}<span class="lbl"> Collapse</span></button>
+            ${inWorkspace ? `<div class="powered lbl"><span class="small muted">Powered by</span>${WORDMARK(18)}</div>` : ""}</nav>
           <main class="main" id="main">${inner}</main>
         </div>
         <nav class="tabbar">${(isRealSuper() && inWorkspace ? [{ h: "#admin", t: "Clients", i: "✦" }] : []).concat(nav).map((n) => `<a href="${n.h}" class="${route === n.h ? "active" : ""}"><span>${n.i}</span>${n.t}</a>`).join("")}</nav>
