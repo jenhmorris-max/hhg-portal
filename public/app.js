@@ -58,6 +58,7 @@
   };
   const mods = () => Object.assign({ documents: true, employees: true, hiring: true, tasks: true, requests: true }, S.org?.modules || {});
 
+  const WORDMARK = (size = 28) => `<span class="wordmark" style="font-size:${size}px"><span class="wm-a">homestead</span><span class="wm-b">hr</span><svg class="wm-line" viewBox="0 0 520 34" aria-hidden="true"><path d="M8 18 C 90 8, 170 26, 258 15 S 420 6, 512 17" stroke="currentColor" stroke-width="6" stroke-linecap="round" fill="none"/></svg></span>`;
   let toastT;
   function toast(msg, err = false) {
     const t = $("#toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
@@ -113,7 +114,7 @@
 
   // ------------------------------------------------------------ auth screens
   function renderAuth(mode = "signin", msg = "") {
-    const brand = `<div class="auth-brand"><div class="boot-mark">HH</div><div><b>${esc(CFG.PORTAL_NAME)}</b><small>The Hope Harvest Group · JHM Consulting</small></div></div>`;
+    const brand = `<div class="auth-brand"><div>${WORDMARK(40)}<small>The Hope Harvest Group · JHM Consulting</small></div></div>`;
     let body = "";
     if (mode === "signin") body = `
       <h2>Sign in</h2>
@@ -223,19 +224,19 @@
     const inWorkspace = !!S.org;
     const accent = (inWorkspace && S.org.accent) || "#23305a";
     document.documentElement.style.setProperty("--accent", accent);   // used for the client's monogram / identity only
-    const logo = inWorkspace && S.logoUrl ? `<img class="logo wide" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(inWorkspace ? S.org.name : "HH"))}</div>`;
+    const logo = inWorkspace ? (S.logoUrl ? `<img class="logo wide" src="${S.logoUrl}" alt="" />` : `<div class="logo">${esc(initials(S.org.name))}</div>`) : "";
     const orgSwitch = S.orgs.length > 1 && inWorkspace ? `<div class="org-switch"><select id="orgsel">${S.orgs.map((o) => `<option value="${o.id}" ${o.id === S.org?.id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select></div>` : "";
     const viewAs = isRealSuper() && inWorkspace ? `<div class="viewas"><span class="small muted">View as</span><select id="viewas">
         <option value="" ${!S.viewAs ? "selected" : ""}>JHM admin</option><option value="owner" ${S.viewAs === "owner" ? "selected" : ""}>Owner</option><option value="staff" ${S.viewAs === "staff" ? "selected" : ""}>Staff</option><option value="employee" ${S.viewAs === "employee" ? "selected" : ""}>Employee</option></select></div>` : "";
     const sideTop = inWorkspace
       ? `<div class="ws-card">${isRealSuper() ? `<a href="#admin" class="ws-back">← All clients</a>` : ""}${S.logoUrl ? `<div class="ws-logo"><img src="${S.logoUrl}" alt="${esc(S.org.name)} logo" /></div>` : `<div class="ws-mono">${esc(initials(S.org.name))}</div><div class="ws-name">${esc(S.org.name)}</div>`}<div class="ws-sub"><span class="rolebadge" title="${esc(ROLE[effRole()]?.blurb || "")}">${isRealSuper() && S.viewAs ? "Viewing as " + roleLabel(S.viewAs) : roleLabel(effRole())}</span></div></div>`
-      : `<div class="ws-card hq"><div class="ws-mono">HH</div><div class="ws-name">JHM Consulting</div><div class="ws-sub"><span class="rolebadge">JHM admin</span></div></div>`;
+      : `<div class="ws-card hq">${WORDMARK(26)}<div class="ws-sub" style="margin-top:8px"><span class="rolebadge">JHM admin</span></div></div>`;
     let collapsed = false; try { collapsed = localStorage.getItem("hhg.side") === "1"; } catch {}
     app.innerHTML = `
       <div class="shell ${inWorkspace ? "in-ws" : "hq"} ${collapsed ? "collapsed" : ""}">
         <header class="topbar">
           <button class="navtoggle" id="navtoggle" title="${collapsed ? "Expand" : "Collapse"} sidebar" aria-label="Toggle sidebar">☰</button>
-          <div class="brand">${logo}<div><div class="name">${esc(inWorkspace ? S.org.name : CFG.PORTAL_NAME)}</div>${inWorkspace ? "" : `<div class="sub">The Hope Harvest Group · JHM Consulting</div>`}</div></div>
+          <div class="brand">${logo}<div>${inWorkspace ? `<div class="name">${esc(S.org.name)}</div>` : `${WORDMARK(22)}<div class="sub">The Hope Harvest Group · JHM Consulting</div>`}</div></div>
           ${inWorkspace ? `<button class="searchbar" id="opensearch"><span>⌕</span><span class="ph">Search people, jobs, tasks, documents…</span><kbd>⌘K</kbd></button>` : ""}
           <div class="spacer"></div>${viewAs}${orgSwitch}
           <div class="avatar" id="avatar" title="${esc(S.profile.email)}">${esc(initials(S.profile.full_name || S.profile.email))}</div>
